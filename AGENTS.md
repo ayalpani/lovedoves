@@ -5,9 +5,9 @@
 Run these commands from the repository root before handing off a change:
 
 ```sh
-ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew testDebugUnitTest
-ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew assembleDebug
-ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew lintDebug
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew testDebugUnitTest
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew assembleDebug
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew lintDebug
 go test ./...
 go vet ./...
 ```
@@ -15,6 +15,9 @@ go vet ./...
 Run Go commands from `relay/`. Use a disposable Android emulator for
 instrumentation tests. Never run an uninstalling or app-data-clearing test task
 on Arash's personal Galaxy A54.
+
+libsignal's JVM classes require Java 21. On Arash's Mac, use the JDK bundled
+with Android Studio as shown above. Android bytecode still targets Java 17.
 
 ## Security invariants
 
@@ -36,4 +39,3 @@ on Arash's personal Galaxy A54.
 - Notifications never contain a partner name, message preview, or media detail.
 - Love Doves is warm and calm, not styled like an enterprise security vault.
 - Prefer Lucide icons and a small number of focused screens.
-

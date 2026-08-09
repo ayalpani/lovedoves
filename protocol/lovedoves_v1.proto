@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package lovedoves.v1;
+
+option java_package = "com.yalpani.lovedoves.protocol.v1";
+option java_multiple_files = true;
+
+message PublicPreKeyBundleV1 {
+  uint32 registration_id = 1;
+  uint32 device_id = 2;
+  uint32 pre_key_id = 3;
+  bytes pre_key_public = 4;
+  uint32 signed_pre_key_id = 5;
+  bytes signed_pre_key_public = 6;
+  bytes signed_pre_key_signature = 7;
+  bytes identity_key = 8;
+  uint32 kyber_pre_key_id = 9;
+  bytes kyber_pre_key_public = 10;
+  bytes kyber_pre_key_signature = 11;
+  string address_name = 12;
+}
+
+message MailboxWriteV1 {
+  string relay_url = 1;
+  string mailbox_id = 2;
+  bytes write_capability = 3;
+}
+
+message InviteV1 {
+  uint32 version = 1;
+  string invite_id = 2;
+  int64 expires_at_epoch_ms = 3;
+  bytes nonce = 4;
+  string display_name = 5;
+  PublicPreKeyBundleV1 pre_key_bundle = 6;
+  MailboxWriteV1 mailbox = 7;
+  bytes rendezvous_secret = 8;
+}
+
+message PairResponseV1 {
+  uint32 version = 1;
+  string invite_id = 2;
+  bytes invite_nonce = 3;
+  string display_name = 4;
+  PublicPreKeyBundleV1 pre_key_bundle = 5;
+  MailboxWriteV1 mailbox = 6;
+}
+
+message PairConfirmationV1 {
+  uint32 version = 1;
+  string invite_id = 2;
+  bytes transcript_hash = 3;
+  int64 confirmed_at_epoch_ms = 4;
+}
+
+message EnvelopeV1 {
+  uint32 version = 1;
+  string message_id = 2;
+  uint32 signal_message_type = 3;
+  bytes signal_message = 4;
+  int64 created_at_epoch_ms = 5;
+}
+
+message TextMessageV1 {
+  string text = 1;
+}
+
+message PhotoMessageV1 {
+  string media_id = 1;
+  string mime_type = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint64 encrypted_size = 5;
+  bytes media_key = 6;
+  bytes media_nonce = 7;
+  bytes sha256 = 8;
+}
+
+message DeliveryReceiptV1 {
+  string message_id = 1;
+  int64 stored_at_epoch_ms = 2;
+}
+
+message ConversationEventV1 {
+  uint32 version = 1;
+  string event_id = 2;
+  int64 created_at_epoch_ms = 3;
+  oneof payload {
+    TextMessageV1 text = 10;
+    PhotoMessageV1 photo = 11;
+    DeliveryReceiptV1 delivery_receipt = 12;
+    PairConfirmationV1 pair_confirmation = 13;
+    RecoveryManifestV1 recovery_manifest = 14;
+    RecoveryBatchV1 recovery_batch = 15;
+    DeviceRevocationV1 device_revocation = 16;
+  }
+}
+
+message RecoveryManifestV1 {
+  string recovery_id = 1;
+  uint64 event_count = 2;
+  uint64 media_count = 3;
+  bytes archive_hash = 4;
+}
+
+message RecoveryBatchV1 {
+  string recovery_id = 1;
+  uint32 batch_index = 2;
+  bool final_batch = 3;
+  repeated ConversationEventV1 events = 4;
+}
+
+message DeviceRevocationV1 {
+  bytes revoked_identity_key = 1;
+  bytes replacement_identity_key = 2;
+  int64 revoked_at_epoch_ms = 3;
+}

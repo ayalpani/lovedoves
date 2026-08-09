@@ -10,7 +10,9 @@ and has not yet received an independent security audit.
 ## Build
 
 ```sh
-ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew assembleDebug
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+ANDROID_HOME=/Users/ayalpani/Library/Android/sdk \
+./gradlew assembleDebug
 ```
 
 See `docs/architecture.md` and `docs/threat-model.md` before changing storage,
@@ -19,4 +21,3 @@ pairing, transport, or cryptographic code.
 ## License
 
 GNU Affero General Public License v3.0. See `LICENSE`.
-
