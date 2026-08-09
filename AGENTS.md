@@ -1,0 +1,39 @@
+# Love Doves change contract
+
+## Required checks
+
+Run these commands from the repository root before handing off a change:
+
+```sh
+ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew testDebugUnitTest
+ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew assembleDebug
+ANDROID_HOME=/Users/ayalpani/Library/Android/sdk ./gradlew lintDebug
+go test ./...
+go vet ./...
+```
+
+Run Go commands from `relay/`. Use a disposable Android emulator for
+instrumentation tests. Never run an uninstalling or app-data-clearing test task
+on Arash's personal Galaxy A54.
+
+## Security invariants
+
+- Never persist message text, decoded photos, vault keys, capabilities, push
+  tokens, or pairing payloads in logs, screenshots, temporary files, backups,
+  crash reports, or fixtures.
+- Keep Android backup disabled and keep sensitive screens behind `FLAG_SECURE`.
+- The relay treats object bodies as opaque bytes and deletes acknowledged or
+  expired objects. It never receives message or media keys.
+- Do not invent cryptographic primitives. Use Android Keystore, AES-GCM,
+  SQLCipher, and libsignal for their documented roles.
+- Pairing, recovery, camera, storage, and background work require a real-device
+  smoke test at the next available milestone.
+
+## Product invariants
+
+- One installation connects to exactly one partner.
+- The app locks whenever it leaves the foreground.
+- Notifications never contain a partner name, message preview, or media detail.
+- Love Doves is warm and calm, not styled like an enterprise security vault.
+- Prefer Lucide icons and a small number of focused screens.
+

@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.LoveDoves" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/love_paper</item>
+        <item name="android:statusBarColor">@color/love_paper</item>
+        <item name="android:textColorPrimary">@color/love_ink</item>
+        <item name="android:colorAccent">@color/love_rose</item>
+        <item name="android:windowBackground">@color/love_paper</item>
+    </style>
+</resources>
+
