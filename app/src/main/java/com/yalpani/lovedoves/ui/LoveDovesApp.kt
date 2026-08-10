@@ -125,18 +125,39 @@ internal fun LoveDovesApp(
                 onSync = controller::sync,
                 onCancel = controller::cancelPairing,
             )
-            is AppContentState.Conversation -> ConversationScreen(
-                pair = state.pair,
-                messages = state.messages,
-                controller = controller,
-                busy = busy,
-                onSend = controller::sendText,
-                onCamera = { overlay = Overlay.Camera },
-                onGallery = onPickPhoto,
-                onSettings = { overlay = Overlay.Settings },
-                onRetry = controller::retryMessage,
-                onPhoto = { overlay = Overlay.Photo(it) },
-            )
+            is AppContentState.Conversation -> {
+                if (overlay == Overlay.Settings) {
+                    SettingsScreen(
+                        pair = state.pair,
+                        busy = busy,
+                        onBack = { overlay = null },
+                        onRecovery = { mode ->
+                            onAuthenticate {
+                                overlay = null
+                                controller.createRecoveryInvitation(mode)
+                            }
+                        },
+                        onDelete = {
+                            onAuthenticate {
+                                controller.prepareDelete { onDeleteAll() }
+                            }
+                        },
+                    )
+                } else {
+                    ConversationScreen(
+                        pair = state.pair,
+                        messages = state.messages,
+                        controller = controller,
+                        busy = busy,
+                        onSend = controller::sendText,
+                        onCamera = { overlay = Overlay.Camera },
+                        onGallery = onPickPhoto,
+                        onSettings = { overlay = Overlay.Settings },
+                        onRetry = controller::retryMessage,
+                        onPhoto = { overlay = Overlay.Photo(it) },
+                    )
+                }
+            }
         }
     }
 
@@ -165,27 +186,7 @@ internal fun LoveDovesApp(
                 },
             )
         }
-        Overlay.Settings -> {
-            val conversation = content as? AppContentState.Conversation
-            if (conversation != null) SettingsScreen(
-                pair = conversation.pair,
-                busy = busy,
-                onBack = { overlay = null },
-                onSync = controller::sync,
-                onRecovery = { mode ->
-                    onAuthenticate {
-                        overlay = null
-                        controller.createRecoveryInvitation(mode)
-                    }
-                },
-                onResendHistory = controller::resendHistory,
-                onDelete = {
-                    onAuthenticate {
-                        controller.prepareDelete { onDeleteAll() }
-                    }
-                },
-            )
-        }
+        Overlay.Settings -> Unit
         is Overlay.Photo -> PhotoDetailScreen(destination.mediaId, controller) { overlay = null }
         null -> Unit
     }

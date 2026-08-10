@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -257,72 +256,123 @@ internal fun SettingsScreen(
     pair: PairStateEntity,
     busy: Boolean,
     onBack: () -> Unit,
-    onSync: () -> Unit,
     onRecovery: (PairingMode) -> Unit,
-    onResendHistory: () -> Unit,
     onDelete: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
-    var confirmRecovery by remember { mutableStateOf(false) }
+    var recoveryStep by remember { mutableStateOf<RecoveryStep?>(null) }
     BackHandler(onBack = onBack)
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(24.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { ChevronLeftIcon("Zurück") }
+    Column(
+        Modifier.fillMaxSize().background(LovePaper).statusBarsPadding(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) { ChevronLeftIcon("Zurück zur Unterhaltung") }
             Text(
-                "Sicherheit",
+                "Einstellungen",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 24.dp,
+                top = 16.dp,
+                end = 24.dp,
+                bottom = 32.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LockIcon()
-                Text("Eure Sicherheitswörter", fontWeight = FontWeight.SemiBold)
-                Text(pair.safetyWords, style = MaterialTheme.typography.titleMedium)
+            item {
                 Text(
-                    "Der Relay kennt weder diese Wörter noch eure Schlüssel oder Inhalte.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "Eure Verbindung",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            item {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = LoveBlush,
+                                shape = CircleShape,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) { LockIcon() }
+                            }
+                            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                                Text(
+                                    "Sicher mit ${pair.partnerName} verbunden",
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                Text(
+                                    "Neue Nachrichten kommen automatisch an.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        Surface(color = LoveMist, shape = RoundedCornerShape(16.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                Text(
+                                    "Sicherheitswörter",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                                Text(
+                                    pair.safetyWords,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                        Text(
+                            "Alles bleibt verschlüsselt auf euren Geräten.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    "Geräte",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            item {
+                SettingsAction(
+                    title = "Partnergerät ersetzen",
+                    detail = "Nur wenn das andere Handy verloren oder kaputt ist.",
+                    enabled = !busy,
+                    onClick = { recoveryStep = RecoveryStep.CONFIRM },
+                )
+            }
+            item {
+                SettingsAction(
+                    title = "Verbindung und Daten löschen",
+                    detail = "Löscht Love Doves auf diesem Handy.",
+                    enabled = !busy,
+                    destructive = true,
+                    onClick = { confirmDelete = true },
                 )
             }
         }
-        Text(
-            "Nachrichten und Fotos liegen lokal verschlüsselt. Love Doves sperrt sich sofort, wenn du die App verlässt.",
-            modifier = Modifier.padding(vertical = 24.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        LoveSecondaryButton(
-            "Jetzt synchronisieren",
-            onClick = onSync,
-            enabled = !busy,
-            icon = { RefreshIcon() },
-        )
-        LoveSecondaryButton(
-            "Neues Partnergerät wiederherstellen",
-            onClick = { confirmRecovery = true },
-            enabled = !busy,
-            icon = { RefreshIcon() },
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        LoveSecondaryButton(
-            "Verlauf erneut übertragen",
-            onClick = onResendHistory,
-            enabled = !busy,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Spacer(Modifier.weight(1f))
-        LovePrimaryButton(
-            "Verbindung und lokale Daten löschen",
-            onClick = { confirmDelete = true },
-            enabled = !busy,
-            destructive = true,
-            icon = { TrashIcon() },
-        )
-        Spacer(Modifier.height(20.dp))
     }
     if (confirmDelete) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { confirmDelete = false }) {
@@ -343,8 +393,8 @@ internal fun SettingsScreen(
             }
         }
     }
-    if (confirmRecovery) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { confirmRecovery = false }) {
+    if (recoveryStep == RecoveryStep.CONFIRM) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
             Surface(color = LovePaper, shape = RoundedCornerShape(28.dp)) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
@@ -352,29 +402,86 @@ internal fun SettingsScreen(
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
-                        "Der bisherige Relay-Briefkasten wird sofort widerrufen. Nach dem Vergleich der neuen Sicherheitswörter überträgt dieses Handy euren Verlauf neu verschlüsselt.",
+                        "Das bisherige Partnergerät verliert den Zugang. Danach verbindet ihr das neue Handy und vergleicht neue Sicherheitswörter.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LovePrimaryButton(
-                        "QR-Code vor Ort",
+                        "Weiter",
+                        onClick = { recoveryStep = RecoveryStep.METHOD },
+                    )
+                    LoveSecondaryButton("Abbrechen", onClick = { recoveryStep = null })
+                }
+            }
+        }
+    }
+    if (recoveryStep == RecoveryStep.METHOD) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
+            Surface(color = LovePaper, shape = RoundedCornerShape(28.dp)) {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Wo seid ihr gerade?", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "Das bestimmt nur, wie ihr das neue Handy verbindet.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    LovePrimaryButton(
+                        "Am selben Ort",
                         onClick = {
-                            confirmRecovery = false
+                            recoveryStep = null
                             onRecovery(PairingMode.IN_PERSON)
                         },
                     )
                     LoveSecondaryButton(
-                        "Link aus der Ferne",
+                        "An verschiedenen Orten",
                         onClick = {
-                            confirmRecovery = false
+                            recoveryStep = null
                             onRecovery(PairingMode.REMOTE)
                         },
                     )
-                    LoveSecondaryButton("Abbrechen", onClick = { confirmRecovery = false })
+                    LoveSecondaryButton("Zurück", onClick = { recoveryStep = RecoveryStep.CONFIRM })
                 }
             }
         }
     }
 }
+
+@Composable
+private fun SettingsAction(
+    title: String,
+    detail: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    destructive: Boolean = false,
+) {
+    Surface(
+        color = Color.White,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = if (destructive) MaterialTheme.colorScheme.error else LoveInk,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    detail,
+                    modifier = Modifier.padding(top = 3.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            ChevronRightIcon(null)
+        }
+    }
+}
+
+private enum class RecoveryStep { CONFIRM, METHOD }
 
 @Composable
 internal fun PhotoDetailScreen(

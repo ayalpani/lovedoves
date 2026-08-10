@@ -484,10 +484,6 @@ internal class LoveDovesRepository(
         TransportSyncWorker.cancel(context)
     }
 
-    suspend fun resendHistory() = io {
-        sendRecoveryHistory(requireNotNull(database.pairStateDao().get()), null)
-    }
-
     private suspend fun acceptPairResponse(response: PairResponseV1): PairingSnapshot {
         val pending = requireNotNull(database.pendingPairingDao().get())
         require(pending.role == ROLE_INVITER)

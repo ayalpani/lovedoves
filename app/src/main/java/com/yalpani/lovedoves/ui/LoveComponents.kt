@@ -199,8 +199,8 @@ internal fun ChevronLeftIcon(description: String? = null) = LoveIcon(
 )
 
 @Composable
-internal fun TrashIcon(description: String? = null) = LoveIcon(
-    listOf("M3 6h18", "M8 6V4h8v2", "M19 6l-1 15H6L5 6", "M10 11v6", "M14 11v6"),
+internal fun ChevronRightIcon(description: String? = null) = LoveIcon(
+    listOf("m9 18 6-6-6-6"),
     description,
 )
 

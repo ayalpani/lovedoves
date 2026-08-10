@@ -10,10 +10,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal sealed interface AppContentState {
     data object Loading : AppContentState
@@ -32,7 +36,9 @@ internal class LoveDovesController(
 ) : AutoCloseable {
     private val repository = LoveDovesRepository(application, session)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val repositoryMutex = Mutex()
     private var messagesJob: Job? = null
+    private var foregroundSyncJob: Job? = null
     private val mutableContent = MutableStateFlow<AppContentState>(AppContentState.Loading)
     private val mutableBusy = MutableStateFlow(false)
     private val mutableError = MutableStateFlow<String?>(null)
@@ -101,10 +107,6 @@ internal class LoveDovesController(
         refreshNow(sync = false)
     }
 
-    fun resendHistory() = action {
-        repository.resendHistory()
-    }
-
     suspend fun photoBytes(mediaId: String): ByteArray = repository.photoBytes(mediaId)
 
     fun prepareDelete(onPrepared: suspend () -> Unit) = action {
@@ -117,11 +119,12 @@ internal class LoveDovesController(
     }
 
     private fun refresh(sync: Boolean) {
-        scope.launch { refreshNow(sync) }
+        scope.launch { repositoryMutex.withLock { refreshNow(sync) } }
     }
 
     private suspend fun refreshNow(sync: Boolean) {
         messagesJob?.cancel()
+        foregroundSyncJob?.cancel()
         val profile = repository.profile()
         if (profile == null) {
             mutableContent.value = AppContentState.ProfileSetup
@@ -143,6 +146,14 @@ internal class LoveDovesController(
                 mutableContent.value = AppContentState.Conversation(pair, messages)
             }
         }
+        foregroundSyncJob = scope.launch {
+            while (isActive) {
+                delay(FOREGROUND_SYNC_INTERVAL_MILLIS)
+                runCatching {
+                    repositoryMutex.withLock { repository.syncNow() }
+                }
+            }
+        }
     }
 
     private fun action(block: suspend () -> Unit) {
@@ -150,7 +161,7 @@ internal class LoveDovesController(
         mutableBusy.value = true
         mutableError.value = null
         scope.launch {
-            runCatching { block() }
+            runCatching { repositoryMutex.withLock { block() } }
                 .onFailure {
                     mutableError.value = if (BuildConfig.DEBUG) {
                         "${it.javaClass.simpleName}: ${it.message ?: "ohne Detail"}"
@@ -164,5 +175,9 @@ internal class LoveDovesController(
 
     override fun close() {
         scope.cancel()
+    }
+
+    private companion object {
+        const val FOREGROUND_SYNC_INTERVAL_MILLIS = 2_000L
     }
 }
