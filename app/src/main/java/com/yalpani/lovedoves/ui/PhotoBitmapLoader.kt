@@ -26,8 +26,9 @@ internal class PhotoBitmapLoader(
     )
 
     override fun close() {
-        thumbnails.snapshot().values.forEach { if (!it.isRecycled) it.recycle() }
+        val cached = thumbnails.snapshot().values
         thumbnails.evictAll()
+        cached.forEach { if (!it.isRecycled) it.recycle() }
     }
 
     private companion object {
