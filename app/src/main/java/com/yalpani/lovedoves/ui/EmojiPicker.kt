@@ -211,6 +211,31 @@ private fun EmojiPickerView.installCompactEmojiRendering() {
             (EMOJI_GRID_VERTICAL_PADDING_DP * resources.displayMetrics.density).roundToInt()
         body.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
         header.layoutManager = LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
+        header.itemAnimator = null
+        val categoryTabWidth = resources.getDimensionPixelSize(
+            EmojiPickerResources.dimen.emoji_picker_header_icon_holder_width,
+        )
+        val categoryIconSize = resources.getDimensionPixelSize(
+            EmojiPickerResources.dimen.emoji_picker_header_icon_width,
+        )
+        fun fixCategoryTabSize(view: View) {
+            view.layoutParams = view.layoutParams.apply { width = categoryTabWidth }
+            view.findViewById<View>(EmojiPickerResources.id.emoji_picker_header_icon)?.let { icon ->
+                icon.layoutParams = icon.layoutParams.apply {
+                    width = categoryIconSize
+                    height = categoryIconSize
+                }
+                icon.scaleX = 1f
+                icon.scaleY = 1f
+            }
+        }
+        header.addOnChildAttachStateChangeListener(
+            object : RecyclerView.OnChildAttachStateChangeListener {
+                override fun onChildViewAttachedToWindow(view: View) = fixCategoryTabSize(view)
+                override fun onChildViewDetachedFromWindow(view: View) = Unit
+            },
+        )
+        for (index in 0 until header.childCount) fixCategoryTabSize(header.getChildAt(index))
         header.addOnItemTouchListener(
             object : RecyclerView.SimpleOnItemTouchListener() {
                 override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {

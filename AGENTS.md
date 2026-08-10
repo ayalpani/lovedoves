@@ -77,7 +77,8 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   titles, and keep the category rail horizontally scrollable with its active category visible.
   The ordinary picker grid must use the search-result grid's padding and emoji size as its layout
   blueprint. A category tap stops any active body fling before jumping, and the composer keeps its
-  cursor while the emoji keyboard is open without reopening the system keyboard.
+  cursor while the emoji keyboard is open without reopening the system keyboard. Every category
+  tab and its icon keep fixed dimensions across selection, deselection, scrolling, and recycling.
 - Keep the launcher icon as a generously inset black heart on the shared light-pink `LoveBlush`
   background.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
