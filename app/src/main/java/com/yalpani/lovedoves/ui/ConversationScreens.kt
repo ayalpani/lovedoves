@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.LoveMist
@@ -263,112 +264,77 @@ internal fun SettingsScreen(
     var recoveryStep by remember { mutableStateOf<RecoveryStep?>(null) }
     BackHandler(onBack = onBack)
     Column(
-        Modifier.fillMaxSize().background(LovePaper).statusBarsPadding(),
+        Modifier.fillMaxSize().background(LovePaper),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) { ChevronLeftIcon("Zurück zur Unterhaltung") }
-            Text(
-                "Einstellungen",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 24.dp,
-                top = 16.dp,
-                end = 24.dp,
-                bottom = 32.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding().height(60.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack, modifier = Modifier.size(60.dp)) {
+                    ChevronLeftIcon("Zurück zur Unterhaltung")
+                }
                 Text(
-                    "Eure Verbindung",
+                    "Einstellungen",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+            HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+        ) {
             item {
-                Surface(
-                    color = Color.White,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                color = LoveBlush,
-                                shape = CircleShape,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) { LockIcon() }
-                            }
-                            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                                Text(
-                                    "Sicher mit ${pair.partnerName} verbunden",
-                                    fontWeight = FontWeight.SemiBold,
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                                Text(
-                                    "Neue Nachrichten kommen automatisch an.",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                        Surface(color = LoveMist, shape = RoundedCornerShape(16.dp)) {
-                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                                Text(
-                                    "Sicherheitswörter",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.labelLarge,
-                                )
-                                Text(
-                                    pair.safetyWords,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                        }
-                        Text(
-                            "Alles bleibt verschlüsselt auf euren Geräten.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
+                SettingsSectionHeader("Verbindung")
+            }
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp)) {
+                    Text(
+                        pair.partnerName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Verbunden",
+                        modifier = Modifier.padding(top = 2.dp),
+                        color = LoveInk.copy(alpha = 0.62f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        "Sicherheitswörter",
+                        modifier = Modifier.padding(top = 20.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        pair.safetyWords,
+                        modifier = Modifier.padding(top = 4.dp),
+                        color = LoveInk.copy(alpha = 0.62f),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
                 }
             }
             item {
-                Text(
-                    "Geräte",
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                SettingsSectionHeader("Gerät")
             }
             item {
-                SettingsAction(
-                    title = "Partnergerät ersetzen",
-                    detail = "Nur wenn das andere Handy verloren oder kaputt ist.",
+                SettingsNavigationItem(
+                    label = "Partnergerät ersetzen",
                     enabled = !busy,
                     onClick = { recoveryStep = RecoveryStep.CONFIRM },
                 )
             }
             item {
-                SettingsAction(
-                    title = "Verbindung und Daten löschen",
-                    detail = "Löscht Love Doves auf diesem Handy.",
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+            }
+            item {
+                SettingsDeleteItem(
+                    label = "Verbindung löschen",
                     enabled = !busy,
-                    destructive = true,
                     onClick = { confirmDelete = true },
                 )
             }
@@ -376,7 +342,7 @@ internal fun SettingsScreen(
     }
     if (confirmDelete) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { confirmDelete = false }) {
-            Surface(color = LovePaper, shape = RoundedCornerShape(28.dp)) {
+            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("Wirklich alles auf diesem Handy löschen?", style = MaterialTheme.typography.headlineSmall)
                     Text(
@@ -395,7 +361,7 @@ internal fun SettingsScreen(
     }
     if (recoveryStep == RecoveryStep.CONFIRM) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
-            Surface(color = LovePaper, shape = RoundedCornerShape(28.dp)) {
+            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
                         "Verlorenes Partnergerät ersetzen?",
@@ -416,7 +382,7 @@ internal fun SettingsScreen(
     }
     if (recoveryStep == RecoveryStep.METHOD) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
-            Surface(color = LovePaper, shape = RoundedCornerShape(28.dp)) {
+            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("Wo seid ihr gerade?", style = MaterialTheme.typography.headlineSmall)
                     Text(
@@ -445,38 +411,77 @@ internal fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsAction(
-    title: String,
-    detail: String,
+private fun SettingsSectionHeader(label: String) {
+    Row(
+        Modifier.fillMaxWidth().background(LoveMist).padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = LoveInk,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SettingsNavigationItem(
+    label: String,
     enabled: Boolean,
     onClick: () -> Unit,
-    destructive: Boolean = false,
 ) {
     Surface(
-        color = Color.White,
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-            .clickable(enabled = enabled, onClick = onClick),
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        color = Color.Transparent,
+        contentColor = LoveInk,
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            Modifier.padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    color = if (destructive) MaterialTheme.colorScheme.error else LoveInk,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    detail,
-                    modifier = Modifier.padding(top = 3.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+            Text(
+                label,
+                modifier = Modifier.weight(1f),
+                color = LoveInk,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
+                fontWeight = FontWeight.Medium,
+            )
             ChevronRightIcon(null)
+        }
+    }
+}
+
+@Composable
+private fun SettingsDeleteItem(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val color = MaterialTheme.colorScheme.error
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        color = Color.Transparent,
+        contentColor = color,
+    ) {
+        Row(
+            Modifier.padding(horizontal = 24.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DeleteIcon(modifier = Modifier.size(32.dp), color = color)
+            Text(
+                label,
+                modifier = Modifier.weight(1f),
+                color = color.copy(alpha = 0.68f),
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }

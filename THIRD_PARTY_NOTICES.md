@@ -6,6 +6,8 @@ Love Doves uses open-source libraries under their respective licenses.
 - SQLCipher for Android, Zetetic LLC — BSD-style license
 - BIP-0039 English word list, Bitcoin BIPs contributors — MIT license
 - ZXing — Apache-2.0
+- Lucide icons, Lucide Contributors — ISC license (with Feather-derived icons
+  under MIT)
 - AndroidX, ML Kit, Protocol Buffers and Firebase client libraries — their
   published open-source terms
 

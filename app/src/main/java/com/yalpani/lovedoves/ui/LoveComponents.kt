@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yalpani.lovedoves.LoveInk
 
+private const val IconTextLabelAlpha = 0.68f
+
 @Composable
 internal fun LovePrimaryButton(
     label: String,
@@ -59,7 +61,7 @@ internal fun LovePrimaryButton(
         Text(
             label,
             color = if (icon == null) LocalContentColor.current else {
-                LocalContentColor.current.copy(alpha = 0.72f)
+                LocalContentColor.current.copy(alpha = IconTextLabelAlpha)
             },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
@@ -80,17 +82,17 @@ internal fun LoveSecondaryButton(
         enabled = enabled,
         modifier = modifier.fillMaxWidth().height(60.dp),
         shape = CircleShape,
-        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.5f)),
     ) {
         icon?.invoke()
         if (icon != null) Spacer(Modifier.width(10.dp))
         Text(
             label,
             color = if (icon == null) LocalContentColor.current else {
-                LocalContentColor.current.copy(alpha = 0.72f)
+                LocalContentColor.current.copy(alpha = IconTextLabelAlpha)
             },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -135,14 +137,18 @@ internal fun LoveIcon(
 @Composable
 internal fun HeartIcon(description: String? = null, modifier: Modifier = Modifier.size(24.dp)) =
     LoveIcon(
-        listOf("M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78"),
+        listOf("M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"),
         description,
         modifier,
     )
 
 @Composable
 internal fun LockIcon(description: String? = null) = LoveIcon(
-    listOf("M7 11V7a5 5 0 0 1 10 0v4", "M5 11h14v10H5z", "M12 15v2"),
+    listOf(
+        "M13 16A1 1 0 0 1 12 17 1 1 0 0 1 11 16 1 1 0 0 1 13 16Z",
+        "M5 10H19A2 2 0 0 1 21 12V20A2 2 0 0 1 19 22H5A2 2 0 0 1 3 20V12A2 2 0 0 1 5 10Z",
+        "M7 10V7a5 5 0 0 1 10 0v3",
+    ),
     description,
 )
 
@@ -151,14 +157,21 @@ internal fun CameraIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),
 ) = LoveIcon(
-    listOf("M14.5 4H9.5L8 7H4v13h16V7h-4z", "M15.5 13.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 1 1 7 0"),
+    listOf(
+        "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4Z",
+        "M15 13A3 3 0 0 1 12 16 3 3 0 0 1 9 13 3 3 0 0 1 15 13Z",
+    ),
     description,
     modifier,
 )
 
 @Composable
 internal fun ImageIcon(description: String? = null) = LoveIcon(
-    listOf("M3 3h18v18H3z", "M8.5 10a1.5 1.5 0 1 1 0-3 1.5 1.5 0 1 1 0 3", "m21 15-5-5L5 21"),
+    listOf(
+        "M5 3H19A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3Z",
+        "M11 9A2 2 0 0 1 9 11 2 2 0 0 1 7 9 2 2 0 0 1 11 9Z",
+        "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
+    ),
     description,
 )
 
@@ -168,7 +181,10 @@ internal fun SendIcon(
     modifier: Modifier = Modifier.size(24.dp),
     color: Color = LocalContentColor.current,
 ) = LoveIcon(
-    listOf("m22 2-7 20-4-9-9-4z", "M22 2 11 13"),
+    listOf(
+        "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11Z",
+        "m21.854 2.147-10.94 10.939",
+    ),
     description,
     modifier,
     color,
@@ -176,19 +192,40 @@ internal fun SendIcon(
 
 @Composable
 internal fun SettingsIcon(description: String? = null) = LoveIcon(
-    listOf("M12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 1 1 0 7", "M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 3.67-.08-.02a1.7 1.7 0 0 0-1.8-.44l-.08.03a1.7 1.7 0 0 0-1.03 1.44V22h-4.24v-.1a1.7 1.7 0 0 0-1.03-1.55l-.08-.03a1.7 1.7 0 0 0-1.8.44l-.08.02-2.12-3.67.06-.06A1.7 1.7 0 0 0 4.6 15l-.08-.06a1.7 1.7 0 0 0-1.64-.16l-.09.04-2.12-3.67.08-.06a1.7 1.7 0 0 0 1.03-1.44v-.1a1.7 1.7 0 0 0-1.03-1.44l-.08-.06L2.79 4.38l.09.04a1.7 1.7 0 0 0 1.64-.16l.08-.06a1.7 1.7 0 0 0 .34-1.88l-.06-.06L7 0.59l.08.02a1.7 1.7 0 0 0 1.8.44l.08-.03A1.7 1.7 0 0 0 10 0h4a1.7 1.7 0 0 0 1.03 1.44l.08.03a1.7 1.7 0 0 0 1.8-.44l.08-.02 2.12 3.67-.06.06a1.7 1.7 0 0 0 .34 1.88l.08.06a1.7 1.7 0 0 0 1.64.16l.09-.04 2.12 3.67-.08.06a1.7 1.7 0 0 0-1.03 1.44v.1a1.7 1.7 0 0 0 1.03 1.44l.08.06-2.12 3.67-.09-.04a1.7 1.7 0 0 0-1.64.16z"),
+    listOf(
+        "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
+        "M15 12A3 3 0 0 1 12 15 3 3 0 0 1 9 12 3 3 0 0 1 15 12Z",
+    ),
     description,
 )
 
 @Composable
 internal fun QrIcon(description: String? = null) = LoveIcon(
-    listOf("M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z", "M14 14h3v3h-3z", "M19 14h2v2", "M19 19h2v2", "M14 19h2v2"),
+    listOf(
+        "M4 3H7A1 1 0 0 1 8 4V7A1 1 0 0 1 7 8H4A1 1 0 0 1 3 7V4A1 1 0 0 1 4 3Z",
+        "M17 3H20A1 1 0 0 1 21 4V7A1 1 0 0 1 20 8H17A1 1 0 0 1 16 7V4A1 1 0 0 1 17 3Z",
+        "M4 16H7A1 1 0 0 1 8 17V20A1 1 0 0 1 7 21H4A1 1 0 0 1 3 20V17A1 1 0 0 1 4 16Z",
+        "M21 16h-3a2 2 0 0 0-2 2v3",
+        "M21 21v.01",
+        "M12 7v3a2 2 0 0 1-2 2H7",
+        "M3 12h.01",
+        "M12 3h.01",
+        "M12 16v.01",
+        "M16 12h1",
+        "M21 12v.01",
+        "M12 21v-1",
+    ),
     description,
 )
 
 @Composable
 internal fun RefreshIcon(description: String? = null) = LoveIcon(
-    listOf("M20 6v5h-5", "M4 18v-5h5", "M18.5 9a7 7 0 0 0-12-2L4 11", "M5.5 15a7 7 0 0 0 12 2l2.5-4"),
+    listOf(
+        "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+        "M21 3v5h-5",
+        "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+        "M8 16H3v5",
+    ),
     description,
 )
 
@@ -196,12 +233,32 @@ internal fun RefreshIcon(description: String? = null) = LoveIcon(
 internal fun ChevronLeftIcon(description: String? = null) = LoveIcon(
     listOf("m15 18-6-6 6-6"),
     description,
+    strokeWidth = 3f,
 )
 
 @Composable
 internal fun ChevronRightIcon(description: String? = null) = LoveIcon(
     listOf("m9 18 6-6-6-6"),
     description,
+    modifier = Modifier.size(20.dp),
+)
+
+@Composable
+internal fun DeleteIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf(
+        "M10 11v6",
+        "M14 11v6",
+        "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+        "M3 6h18",
+        "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    ),
+    description,
+    modifier,
+    color,
 )
 
 @Composable
