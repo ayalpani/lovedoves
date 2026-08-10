@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 android_home="${ANDROID_HOME:-/Users/ayalpani/Library/Android/sdk}"
-java_home="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+java_home="${LOVE_DOVES_JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 adb_bin="$android_home/platform-tools/adb"
 
 usage() {

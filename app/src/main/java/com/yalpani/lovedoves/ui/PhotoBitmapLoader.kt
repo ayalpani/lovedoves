@@ -15,13 +15,13 @@ internal class PhotoBitmapLoader(
     suspend fun thumbnail(mediaId: String): Bitmap {
         thumbnails.get(mediaId)?.takeUnless(Bitmap::isRecycled)?.let { return it }
         return PhotoProcessor.forDisplay(
-            jpeg = controller.photoBytes(mediaId),
+            jpeg = controller.thumbnailBytes(mediaId),
             maxEdge = THUMBNAIL_MAX_EDGE,
         ).also { thumbnails.put(mediaId, it) }
     }
 
     suspend fun fullSize(mediaId: String): Bitmap = PhotoProcessor.forDisplay(
-        jpeg = controller.photoBytes(mediaId),
+        jpeg = controller.mediaBytes(mediaId),
         maxEdge = FULL_SIZE_MAX_EDGE,
     )
 

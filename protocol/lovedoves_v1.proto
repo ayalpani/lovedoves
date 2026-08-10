@@ -92,6 +92,25 @@ message PhotoMessageV1 {
   bytes sha256 = 8;
 }
 
+message EncryptedMediaV1 {
+  string media_id = 1;
+  string mime_type = 2;
+  uint64 encrypted_size = 3;
+  bytes media_key = 4;
+  bytes media_nonce = 5;
+  bytes sha256 = 6;
+}
+
+message VideoMessageV1 {
+  EncryptedMediaV1 video = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint64 duration_ms = 4;
+  EncryptedMediaV1 thumbnail = 5;
+  uint32 thumbnail_width = 6;
+  uint32 thumbnail_height = 7;
+}
+
 message DeliveryReceiptV1 {
   string message_id = 1;
   int64 stored_at_epoch_ms = 2;
@@ -109,6 +128,7 @@ message ConversationEventV1 {
     RecoveryManifestV1 recovery_manifest = 14;
     RecoveryBatchV1 recovery_batch = 15;
     DeviceRevocationV1 device_revocation = 16;
+    VideoMessageV1 video = 17;
   }
 }
 

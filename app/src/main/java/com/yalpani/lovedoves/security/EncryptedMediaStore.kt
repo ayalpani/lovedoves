@@ -81,6 +81,10 @@ internal class EncryptedMediaStore private constructor(private val directory: Fi
 
     fun readCiphertext(relativePath: String): ByteArray = resolve(relativePath).readBytes()
 
+    fun delete(relativePath: String) {
+        resolve(relativePath).delete()
+    }
+
     fun importCiphertext(id: String, bytes: ByteArray, expectedHash: ByteArray): String {
         require(bytes.size <= MAX_CIPHERTEXT_BYTES) { "Encrypted photo exceeds limit" }
         require(MessageDigest.isEqual(expectedHash, sha256(bytes))) { "Photo hash mismatch" }

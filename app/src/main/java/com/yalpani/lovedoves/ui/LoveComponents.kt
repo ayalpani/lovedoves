@@ -241,6 +241,70 @@ internal fun ImageIcon(
 )
 
 @Composable
+internal fun SmileIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M8 14s1.5 2 4 2 4-2 4-2",
+        "M9 9h.01",
+        "M15 9h.01",
+        "M21 12a9 9 0 1 1-18 0 9 9 0 1 1 18 0",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun PaperclipIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829L18.828 9a4 4 0 1 0-5.657-5.657L4.757 11.757a6 6 0 1 0 8.486 8.486L21.657 11.83",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun VideoIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5",
+        "M4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun PlayIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    paths = listOf("m6 3 14 9-14 9z"),
+    contentDescription = description,
+    modifier = modifier,
+    color = color,
+)
+
+@Composable
+internal fun PauseIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    paths = listOf("M8 5v14", "M16 5v14"),
+    contentDescription = description,
+    modifier = modifier,
+    color = color,
+)
+
+@Composable
 internal fun SendIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),

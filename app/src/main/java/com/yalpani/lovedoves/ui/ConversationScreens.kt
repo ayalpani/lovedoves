@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,19 +75,24 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun ConversationScreen(
     pair: PairStateEntity,
     messages: List<ConversationEventEntity>,
     photoBitmaps: PhotoBitmapLoader,
     busy: Boolean,
     onSend: (String) -> Unit,
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
+    onAttachment: () -> Unit,
     onSettings: () -> Unit,
     onRetry: (String) -> Unit,
     onPhoto: (String) -> Unit,
+    onVideo: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -147,7 +154,7 @@ internal fun ConversationScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
-                    MessageBubble(message, photoBitmaps, onRetry, onPhoto)
+                    MessageBubble(message, photoBitmaps, onRetry, onPhoto, onVideo)
                 }
             }
         }
@@ -155,12 +162,27 @@ internal fun ConversationScreen(
             text = text,
             busy = busy,
             onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
-            onCamera = onCamera,
-            onGallery = onGallery,
+            onEmoji = {
+                keyboard?.hide()
+                focusManager.clearFocus()
+                showEmojiPicker = true
+            },
+            onAttachment = onAttachment,
             onSend = {
                 val message = text
                 text = ""
                 onSend(message)
+            },
+        )
+    }
+    if (showEmojiPicker) {
+        EmojiPickerBottomSheet(
+            sheetState = emojiSheetState,
+            onDismiss = { showEmojiPicker = false },
+            onEmojiPicked = { emoji ->
+                if (text.length + emoji.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
+                    text += emoji
+                }
             },
         )
     }
@@ -171,8 +193,8 @@ private fun MessageComposer(
     text: String,
     busy: Boolean,
     onTextChange: (String) -> Unit,
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
+    onEmoji: () -> Unit,
+    onAttachment: () -> Unit,
     onSend: () -> Unit,
 ) {
     val canSend = text.isNotBlank() && !busy
@@ -197,11 +219,11 @@ private fun MessageComposer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
-                    onClick = onGallery,
+                    onClick = onEmoji,
                     enabled = !busy,
                     modifier = Modifier.size(44.dp),
                 ) {
-                    ImageIcon("Foto auswählen", modifier = Modifier.size(20.dp))
+                    SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
                 }
                 BasicTextField(
                     value = text,
@@ -224,11 +246,11 @@ private fun MessageComposer(
                     },
                 )
                 IconButton(
-                    onClick = onCamera,
+                    onClick = onAttachment,
                     enabled = !busy,
                     modifier = Modifier.size(44.dp),
                 ) {
-                    CameraIcon("Foto aufnehmen", modifier = Modifier.size(20.dp))
+                    PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
                 }
             }
         }
@@ -254,6 +276,7 @@ private fun MessageBubble(
     photoBitmaps: PhotoBitmapLoader,
     onRetry: (String) -> Unit,
     onPhoto: (String) -> Unit,
+    onVideo: (String) -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth(),
@@ -287,6 +310,38 @@ private fun MessageBubble(
                                 .clickable { onPhoto(mediaId) },
                             contentScale = ContentScale.Crop,
                         )
+                    }
+                    LoveDovesRepository.KIND_VIDEO -> {
+                        val mediaId = requireNotNull(message.mediaId)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(260.dp)
+                                .clickable { onVideo(mediaId) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            EncryptedPhotoImage(
+                                mediaId = mediaId,
+                                photoBitmaps = photoBitmaps,
+                                contentDescription = if (message.outgoing) {
+                                    "Gesendetes Video"
+                                } else {
+                                    "Empfangenes Video"
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.52f),
+                                contentColor = Color.White,
+                                modifier = Modifier.size(58.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
+                                }
+                            }
+                        }
                     }
                     else -> Text(
                         message.body.orEmpty(),

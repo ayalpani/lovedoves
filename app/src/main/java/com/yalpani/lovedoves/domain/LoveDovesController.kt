@@ -98,6 +98,14 @@ internal class LoveDovesController(
         repository.sendPhoto(photo)
     }
 
+    fun sendVideo(video: PreparedVideo) {
+        if (mutableBusy.value) {
+            video.clear()
+            return
+        }
+        action { repository.sendVideo(video) }
+    }
+
     fun retryMessage(id: String) = action {
         repository.retryMessage(id)
     }
@@ -107,7 +115,9 @@ internal class LoveDovesController(
         refreshNow(sync = false)
     }
 
-    suspend fun photoBytes(mediaId: String): ByteArray = repository.photoBytes(mediaId)
+    suspend fun mediaBytes(mediaId: String): ByteArray = repository.mediaBytes(mediaId)
+
+    suspend fun thumbnailBytes(mediaId: String): ByteArray = repository.thumbnailBytes(mediaId)
 
     fun prepareDelete(onPrepared: suspend () -> Unit) = action {
         repository.deletePairAndLocalData()

@@ -24,10 +24,10 @@ Verschlüsselung und serverseitig keine lesbaren Inhalte.
 
 ## MVP-Grenze
 
-Der erste Release enthält ausschließlich Kopplung, Text, ein Foto pro Nachricht,
-Zustellstatus, erneutes Senden, Sicherheitseinstellungen, Löschung und
-partnergestützte Wiederherstellung. Reaktionen, Gruppen, GIFs, Sprache, Video,
-Ausflüge, Kalender und gemeinsame Planung gehören nicht in das MVP.
+Der erste Release enthält ausschließlich Kopplung, Text, ein Foto oder kurzes
+Video pro Nachricht, Zustellstatus, erneutes Senden, Sicherheitseinstellungen,
+Löschung und partnergestützte Wiederherstellung. Reaktionen, Gruppen, GIFs,
+Sprache, Ausflüge, Kalender und gemeinsame Planung gehören nicht in das MVP.
 
 WebRTC bleibt für spätere Anrufe oder sehr große Direktübertragungen reserviert.
 Asynchrone Nachrichten laufen über den blinden Relay, weil ein reines

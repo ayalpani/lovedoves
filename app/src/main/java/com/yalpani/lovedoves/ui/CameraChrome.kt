@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.core.view.WindowCompat
 
 // Ported from Spur's CameraChrome. Love Doves keeps its capture pipeline memory-only.
@@ -128,6 +129,7 @@ internal fun BoxScope.CameraCloseButton(
 internal fun BoxScope.CameraSwitchButton(
     contentDescription: String,
     landscape: Boolean,
+    portraitBottomOffset: Dp = 0.dp,
     onClick: () -> Unit,
 ) {
     IconButton(
@@ -135,7 +137,10 @@ internal fun BoxScope.CameraSwitchButton(
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .navigationBarsPadding()
-            .padding(end = 26.dp, bottom = if (landscape) 18.dp else 25.dp)
+            .padding(
+                end = 26.dp,
+                bottom = if (landscape) 18.dp else 25.dp + portraitBottomOffset,
+            )
             .size(58.dp)
             .semantics { this.contentDescription = contentDescription },
         colors = IconButtonDefaults.filledIconButtonColors(
@@ -163,6 +168,8 @@ internal fun BoxScope.CameraCaptureButton(
     enabled: Boolean,
     contentDescription: String,
     landscape: Boolean,
+    portraitBottomOffset: Dp = 0.dp,
+    color: Color = Color.White,
     shape: Shape = CircleShape,
     onClick: () -> Unit,
 ) {
@@ -172,12 +179,12 @@ internal fun BoxScope.CameraCaptureButton(
             .navigationBarsPadding()
             .padding(
                 end = if (landscape) 18.dp else 0.dp,
-                bottom = if (landscape) 0.dp else 18.dp,
+                bottom = if (landscape) 0.dp else 18.dp + portraitBottomOffset,
             )
             .size(78.dp)
             .border(4.dp, Color.White, CircleShape)
             .padding(7.dp)
-            .background(Color.White, shape)
+            .background(color, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics {
                 this.contentDescription = contentDescription

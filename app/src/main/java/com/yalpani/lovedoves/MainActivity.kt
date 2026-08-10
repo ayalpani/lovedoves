@@ -39,12 +39,13 @@ import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
     private val pendingLink = MutableStateFlow<String?>(null)
-    private val pendingPickedPhoto = MutableStateFlow<Uri?>(null)
+    private val pendingPickedMedia = MutableStateFlow<Uri?>(null)
     private val authenticationError = MutableStateFlow<String?>(null)
     private var promptShowing = false
     private var systemPermissionPromptShowing = false
     private var promptedThisForeground = false
-    private val photoPicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    private val mediaPicker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        systemPermissionPromptShowing = false
         if (uri != null) {
             runCatching {
                 contentResolver.takePersistableUriPermission(
@@ -52,7 +53,7 @@ class MainActivity : FragmentActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            pendingPickedPhoto.value = uri
+            pendingPickedMedia.value = uri
         }
     }
 
@@ -80,18 +81,21 @@ class MainActivity : FragmentActivity() {
                     )
                     is VaultState.Open -> {
                         val link by pendingLink.collectAsStateWithLifecycle()
-                        val pickedPhoto by pendingPickedPhoto.collectAsStateWithLifecycle()
+                        val pickedMedia by pendingPickedMedia.collectAsStateWithLifecycle()
                         LoveDovesApp(
                             session = state.session,
                             incomingLink = link,
-                            pickedPhoto = pickedPhoto,
+                            pickedMedia = pickedMedia,
                             onLinkConsumed = { pendingLink.value = null },
-                            onPickPhoto = {
-                                photoPicker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            onPickMedia = {
+                                systemPermissionPromptShowing = true
+                                mediaPicker.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                                    ),
                                 )
                             },
-                            onPhotoConsumed = ::consumePickedPhoto,
+                            onMediaConsumed = ::consumePickedMedia,
                             onSystemPermissionPrompt = { systemPermissionPromptShowing = it },
                             onAuthenticate = ::authenticateAction,
                             onDeleteAll = { application.vaults.deleteAll() },
@@ -127,8 +131,8 @@ class MainActivity : FragmentActivity() {
         pendingLink.value = intent.dataString
     }
 
-    private fun consumePickedPhoto(uri: Uri) {
-        if (pendingPickedPhoto.value == uri) pendingPickedPhoto.value = null
+    private fun consumePickedMedia(uri: Uri) {
+        if (pendingPickedMedia.value == uri) pendingPickedMedia.value = null
         runCatching {
             contentResolver.releasePersistableUriPermission(
                 uri,

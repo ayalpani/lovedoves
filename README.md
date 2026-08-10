@@ -1,7 +1,7 @@
 # Love Doves
 
-Love Doves is an open-source, private space for exactly two people. Messages
-and photos are encrypted end to end, stored in an encrypted local vault, and
+Love Doves is an open-source, private space for exactly two people. Messages,
+photos and short videos are encrypted end to end, stored in an encrypted local vault, and
 held by the relay only as short-lived ciphertext.
 
 The first release targets Android 11 and newer. It is under active development
@@ -23,9 +23,9 @@ als zweites Gerät. `scripts/lovedoves-dev relay` startet den lokalen Blind-Rela
 
 ## Inhalt des MVP
 
-- biometrisch gebundener SQLCipher-Tresor und einzeln AES-GCM-verschlüsselte Fotos
+- biometrisch gebundener SQLCipher-Tresor und einzeln AES-GCM-verschlüsselte Fotos und Videos
 - kontoloses QR-/App-Link-Pairing mit sechs Sicherheitswörtern
-- Signal-Protokoll für Text, Fotos und Zustellbestätigungen
+- Signal-Protokoll für Text, Fotos, kurze Videos und Zustellbestätigungen
 - kurzlebiger Go-Relay für ausschließlich undurchsichtigen Chiffretext
 - Partnergeräte-Ersatz mit Widerruf und paketweiser Verlaufsübertragung
 

@@ -20,6 +20,7 @@ import com.yalpani.lovedoves.protocol.v1.ConversationEventV1
 import com.yalpani.lovedoves.protocol.v1.DeliveryReceiptV1
 import com.yalpani.lovedoves.protocol.v1.DeviceRevocationV1
 import com.yalpani.lovedoves.protocol.v1.EnvelopeV1
+import com.yalpani.lovedoves.protocol.v1.EncryptedMediaV1
 import com.yalpani.lovedoves.protocol.v1.InviteV1
 import com.yalpani.lovedoves.protocol.v1.MailboxWriteV1
 import com.yalpani.lovedoves.protocol.v1.PairConfirmationV1
@@ -29,6 +30,7 @@ import com.yalpani.lovedoves.protocol.v1.RecoveryBatchV1
 import com.yalpani.lovedoves.protocol.v1.RecoveryManifestV1
 import com.yalpani.lovedoves.protocol.v1.RecoveryRecordV1
 import com.yalpani.lovedoves.protocol.v1.TextMessageV1
+import com.yalpani.lovedoves.protocol.v1.VideoMessageV1
 import com.yalpani.lovedoves.security.EncryptedMedia
 import com.yalpani.lovedoves.security.EncryptedMediaStore
 import com.yalpani.lovedoves.security.PairingPayloadCodec
@@ -75,6 +77,21 @@ internal data class PreparedPhoto(
     val width: Int,
     val height: Int,
 )
+
+internal data class PreparedVideo(
+    val mp4: ByteArray,
+    val thumbnailJpeg: ByteArray,
+    val width: Int,
+    val height: Int,
+    val durationMillis: Long,
+    val thumbnailWidth: Int,
+    val thumbnailHeight: Int,
+) {
+    fun clear() {
+        mp4.fill(0)
+        thumbnailJpeg.fill(0)
+    }
+}
 
 internal class LoveDovesRepository(
     private val context: Context,
@@ -457,6 +474,78 @@ internal class LoveDovesRepository(
         encrypted.key.fill(0)
     }
 
+    suspend fun sendVideo(video: PreparedVideo) = io {
+        require(video.mp4.size <= MAX_VIDEO_BYTES)
+        require(video.thumbnailJpeg.size <= MAX_PHOTO_BYTES)
+        var encryptedVideo: EncryptedMedia? = null
+        var encryptedThumbnail: EncryptedMedia? = null
+        val id = UUID.randomUUID().toString()
+        var stored = false
+        try {
+            encryptedVideo = session.media.encrypt(video.mp4)
+            encryptedThumbnail = session.media.encrypt(video.thumbnailJpeg)
+            val now = System.currentTimeMillis()
+            database.withTransaction {
+                database.mediaDao().insert(
+                    encryptedThumbnail.toEntity(
+                        mimeType = "image/jpeg",
+                        width = video.thumbnailWidth,
+                        height = video.thumbnailHeight,
+                    ),
+                )
+                database.mediaDao().insert(
+                    encryptedVideo.toEntity(
+                        mimeType = "video/mp4",
+                        width = video.width,
+                        height = video.height,
+                        thumbnailMediaId = encryptedThumbnail.id,
+                        durationMillis = video.durationMillis,
+                    ),
+                )
+                database.conversationDao().insert(
+                    ConversationEventEntity(
+                        id,
+                        true,
+                        KIND_VIDEO,
+                        null,
+                        encryptedVideo.id,
+                        now,
+                        DELIVERY_SENDING,
+                    ),
+                )
+            }
+            stored = true
+            val event = ConversationEventV1.newBuilder()
+                .setVersion(1)
+                .setEventId(id)
+                .setCreatedAtEpochMs(now)
+                .setVideo(
+                    VideoMessageV1.newBuilder()
+                        .setVideo(encryptedVideo.toProtocolMedia("video/mp4"))
+                        .setWidth(video.width)
+                        .setHeight(video.height)
+                        .setDurationMs(video.durationMillis)
+                        .setThumbnail(encryptedThumbnail.toProtocolMedia("image/jpeg"))
+                        .setThumbnailWidth(video.thumbnailWidth)
+                        .setThumbnailHeight(video.thumbnailHeight),
+                )
+                .build()
+            enqueueAndUpload(id, id, event)
+        } catch (failure: Throwable) {
+            if (stored) {
+                database.conversationDao().updateDelivery(id, DELIVERY_FAILED)
+            } else {
+                encryptedVideo?.let { session.media.delete(it.relativePath) }
+                encryptedThumbnail?.let { session.media.delete(it.relativePath) }
+            }
+            throw failure
+        } finally {
+            encryptedVideo?.key?.fill(0)
+            encryptedThumbnail?.key?.fill(0)
+            video.clear()
+        }
+    }
+
     suspend fun retryMessage(messageId: String) = io {
         val outbox = requireNotNull(database.outboxDao().get(messageId))
         uploadOutbox(outbox)
@@ -469,9 +558,15 @@ internal class LoveDovesRepository(
         finalizePairIfReady()
     }
 
-    suspend fun photoBytes(mediaId: String): ByteArray = io {
+    suspend fun mediaBytes(mediaId: String): ByteArray = io {
         val media = requireNotNull(database.mediaDao().get(mediaId))
         session.media.decrypt(media.toEncryptedMedia())
+    }
+
+    suspend fun thumbnailBytes(mediaId: String): ByteArray = io {
+        val media = requireNotNull(database.mediaDao().get(mediaId))
+        val thumbnail = media.thumbnailMediaId?.let(database.mediaDao()::get) ?: media
+        session.media.decrypt(requireNotNull(thumbnail).toEncryptedMedia())
     }
 
     suspend fun deletePairAndLocalData() = io {
@@ -541,17 +636,28 @@ internal class LoveDovesRepository(
         val event = database.conversationDao().get(item.eventId)
         event?.mediaId?.let { mediaId ->
             val media = requireNotNull(database.mediaDao().get(mediaId))
-            relay.putObject(
-                pair.partnerMailboxId,
-                mediaId,
-                pair.partnerWriteCapability,
-                session.media.readCiphertext(media.relativePath),
-            )
+            uploadMedia(relay, pair, media)
+            media.thumbnailMediaId?.let { thumbnailId ->
+                uploadMedia(relay, pair, requireNotNull(database.mediaDao().get(thumbnailId)))
+            }
         }
         database.outboxDao().delete(item.objectId)
         if (item.eventId.isNotBlank()) {
             database.conversationDao().updateDelivery(item.eventId, DELIVERY_SENT)
         }
+    }
+
+    private suspend fun uploadMedia(
+        relay: RelayClient,
+        pair: PairStateEntity,
+        media: MediaEntity,
+    ) {
+        relay.putObject(
+            pair.partnerMailboxId,
+            media.id,
+            pair.partnerWriteCapability,
+            session.media.readCiphertext(media.relativePath),
+        )
     }
 
     private suspend fun flushOutbox() {
@@ -606,7 +712,7 @@ internal class LoveDovesRepository(
                 }
                 ?: return@forEach
             var receiptFor: String? = null
-            var mediaToDelete: String? = null
+            val mediaToDelete = mutableSetOf<String>()
             val transaction = runCatching {
                 database.withTransaction {
                 if (database.processedObjectDao().contains(objectId)) return@withTransaction
@@ -668,7 +774,44 @@ internal class LoveDovesRepository(
                         database.processedObjectDao().insert(
                             ProcessedObjectEntity(event.photo.mediaId, System.currentTimeMillis()),
                         )
-                        mediaToDelete = event.photo.mediaId
+                        mediaToDelete += event.photo.mediaId
+                        receiptFor = event.eventId
+                    }
+                    ConversationEventV1.PayloadCase.VIDEO -> {
+                        validateVideo(event.video)
+                        val thumbnail = importMedia(
+                            event.video.thumbnail,
+                            event.video.thumbnailWidth,
+                            event.video.thumbnailHeight,
+                            available,
+                        )
+                        val video = importMedia(
+                            event.video.video,
+                            event.video.width,
+                            event.video.height,
+                            available,
+                            thumbnailMediaId = thumbnail.id,
+                            durationMillis = event.video.durationMs,
+                        )
+                        database.mediaDao().insert(thumbnail)
+                        database.mediaDao().insert(video)
+                        database.conversationDao().insert(
+                            ConversationEventEntity(
+                                event.eventId,
+                                false,
+                                KIND_VIDEO,
+                                null,
+                                video.id,
+                                event.createdAtEpochMs,
+                                DELIVERY_DELIVERED,
+                            ),
+                        )
+                        listOf(thumbnail.id, video.id).forEach { mediaId ->
+                            database.processedObjectDao().insert(
+                                ProcessedObjectEntity(mediaId, System.currentTimeMillis()),
+                            )
+                            mediaToDelete += mediaId
+                        }
                         receiptFor = event.eventId
                     }
                     ConversationEventV1.PayloadCase.DELIVERY_RECEIPT -> {
@@ -765,7 +908,50 @@ internal class LoveDovesRepository(
                                             System.currentTimeMillis(),
                                         ),
                                     )
-                                    mediaToDelete = archivedMedia.mediaId
+                                    mediaToDelete += archivedMedia.mediaId
+                                }
+                                ConversationEventV1.PayloadCase.VIDEO -> {
+                                    validateVideo(archived.video)
+                                    val thumbnail = importMedia(
+                                        archived.video.thumbnail,
+                                        archived.video.thumbnailWidth,
+                                        archived.video.thumbnailHeight,
+                                        available,
+                                    )
+                                    val video = importMedia(
+                                        archived.video.video,
+                                        archived.video.width,
+                                        archived.video.height,
+                                        available,
+                                        thumbnailMediaId = thumbnail.id,
+                                        durationMillis = archived.video.durationMs,
+                                    )
+                                    if (database.mediaDao().get(thumbnail.id) == null) {
+                                        database.mediaDao().insert(thumbnail)
+                                    }
+                                    if (database.mediaDao().get(video.id) == null) {
+                                        database.mediaDao().insert(video)
+                                    }
+                                    database.conversationDao().insert(
+                                        ConversationEventEntity(
+                                            archived.eventId,
+                                            record.outgoingOnRecoveringDevice,
+                                            KIND_VIDEO,
+                                            null,
+                                            video.id,
+                                            archived.createdAtEpochMs,
+                                            DELIVERY_DELIVERED,
+                                        ),
+                                    )
+                                    listOf(thumbnail.id, video.id).forEach { mediaId ->
+                                        database.processedObjectDao().insert(
+                                            ProcessedObjectEntity(
+                                                mediaId,
+                                                System.currentTimeMillis(),
+                                            ),
+                                        )
+                                        mediaToDelete += mediaId
+                                    }
                                 }
                                 else -> error("Unsupported recovery record")
                             }
@@ -790,7 +976,7 @@ internal class LoveDovesRepository(
             transaction.getOrThrow()
             spool.delete(objectId)
             available.remove(objectId)
-            mediaToDelete?.let {
+            mediaToDelete.forEach {
                 spool.delete(it)
                 available.remove(it)
             }
@@ -838,7 +1024,11 @@ internal class LoveDovesRepository(
         val target = pair.partnerTarget()
         val history = database.conversationDao().getAll()
         require(history.size.toLong() <= MAX_RECOVERY_EVENTS)
-        val mediaCount = history.count { it.mediaId != null }
+        val mediaCount = history.sumOf { item ->
+            item.mediaId?.let { mediaId ->
+                if (database.mediaDao().get(mediaId)?.thumbnailMediaId == null) 1 else 2
+            } ?: 0
+        }
         val recoveryId = UUID.randomUUID().toString()
         val archiveHash = MessageDigest.getInstance("SHA-256").run {
             history.forEach { item ->
@@ -848,7 +1038,11 @@ internal class LoveDovesRepository(
                 item.body?.let { update(it.encodeToByteArray()) }
                 item.mediaId?.let { mediaId ->
                     update(mediaId.encodeToByteArray())
-                    update(requireNotNull(database.mediaDao().get(mediaId)).cipherSha256)
+                    val media = requireNotNull(database.mediaDao().get(mediaId))
+                    update(media.cipherSha256)
+                    media.thumbnailMediaId?.let { thumbnailId ->
+                        update(requireNotNull(database.mediaDao().get(thumbnailId)).cipherSha256)
+                    }
                 }
             }
             digest()
@@ -873,12 +1067,11 @@ internal class LoveDovesRepository(
             val archived = source.toProtocolEvent()
             source.mediaId?.let { mediaId ->
                 val media = requireNotNull(database.mediaDao().get(mediaId))
-                RelayClient(pair.relayUrl).putObject(
-                    pair.partnerMailboxId,
-                    media.id,
-                    pair.partnerWriteCapability,
-                    session.media.readCiphertext(media.relativePath),
-                )
+                val relay = RelayClient(pair.relayUrl)
+                uploadMedia(relay, pair, media)
+                media.thumbnailMediaId?.let { thumbnailId ->
+                    uploadMedia(relay, pair, requireNotNull(database.mediaDao().get(thumbnailId)))
+                }
             }
             val batchId = UUID.randomUUID().toString()
             uploadEvent(
@@ -939,6 +1132,22 @@ internal class LoveDovesRepository(
                         .setMediaKey(ByteString.copyFrom(media.key))
                         .setMediaNonce(ByteString.copyFrom(media.nonce))
                         .setSha256(ByteString.copyFrom(media.cipherSha256)),
+                ).build()
+            }
+            KIND_VIDEO -> {
+                val media = requireNotNull(database.mediaDao().get(requireNotNull(mediaId)))
+                val thumbnail = requireNotNull(
+                    media.thumbnailMediaId?.let(database.mediaDao()::get),
+                )
+                builder.setVideo(
+                    VideoMessageV1.newBuilder()
+                        .setVideo(media.toProtocolMedia())
+                        .setWidth(media.width)
+                        .setHeight(media.height)
+                        .setDurationMs(media.durationMillis)
+                        .setThumbnail(thumbnail.toProtocolMedia())
+                        .setThumbnailWidth(thumbnail.width)
+                        .setThumbnailHeight(thumbnail.height),
                 ).build()
             }
             else -> error("Unsupported local conversation event")
@@ -1104,22 +1313,103 @@ internal class LoveDovesRepository(
         require(photo.sha256.size() == SHA256_BYTES)
     }
 
+    private fun validateVideo(video: VideoMessageV1) {
+        validateMedia(video.video, "video/mp4")
+        validateMedia(video.thumbnail, "image/jpeg")
+        require(video.video.mediaId != video.thumbnail.mediaId)
+        require(video.width in 1..MAX_VIDEO_EDGE && video.height in 1..MAX_VIDEO_EDGE)
+        require(video.thumbnailWidth in 1..MAX_PHOTO_EDGE)
+        require(video.thumbnailHeight in 1..MAX_PHOTO_EDGE)
+        require(video.durationMs in 1..MAX_VIDEO_DURATION_MILLIS)
+    }
+
+    private fun validateMedia(media: EncryptedMediaV1, mimeType: String) {
+        require(media.mediaId.matches(UUID_PATTERN))
+        require(media.mimeType == mimeType)
+        require(
+            media.encryptedSize in
+                MIN_ENCRYPTED_PHOTO_BYTES..EncryptedMediaStore.MAX_CIPHERTEXT_BYTES.toLong(),
+        )
+        require(media.mediaKey.size() == PHOTO_KEY_BYTES)
+        require(media.mediaNonce.size() == PHOTO_NONCE_BYTES)
+        require(media.sha256.size() == SHA256_BYTES)
+    }
+
+    private fun importMedia(
+        media: EncryptedMediaV1,
+        width: Int,
+        height: Int,
+        available: Set<String>,
+        thumbnailMediaId: String? = null,
+        durationMillis: Long = 0L,
+    ): MediaEntity {
+        if (media.mediaId !in available) throw MissingMediaException
+        val mediaBytes = spool.get(media.mediaId)
+        require(mediaBytes.size.toLong() == media.encryptedSize)
+        val relativePath = session.media.importCiphertext(
+            media.mediaId,
+            mediaBytes,
+            media.sha256.toByteArray(),
+        )
+        return MediaEntity(
+            id = media.mediaId,
+            relativePath = relativePath,
+            mimeType = media.mimeType,
+            width = width,
+            height = height,
+            encryptedSize = media.encryptedSize,
+            key = media.mediaKey.toByteArray(),
+            nonce = media.mediaNonce.toByteArray(),
+            cipherSha256 = media.sha256.toByteArray(),
+            thumbnailMediaId = thumbnailMediaId,
+            durationMillis = durationMillis,
+        )
+    }
+
     private fun storeTransportCredentials(relayUrl: String, mailboxId: String, read: ByteArray) {
         transportCredentials.put(TransportCredentials(relayUrl, mailboxId, read))
         TransportSyncWorker.schedulePeriodic(context)
     }
 
-    private fun EncryptedMedia.toEntity(width: Int, height: Int): MediaEntity = MediaEntity(
-        id,
-        relativePath,
-        "image/jpeg",
-        width,
-        height,
-        encryptedSize,
-        key.copyOf(),
-        nonce,
-        cipherSha256,
+    private fun EncryptedMedia.toEntity(
+        width: Int,
+        height: Int,
+        mimeType: String = "image/jpeg",
+        thumbnailMediaId: String? = null,
+        durationMillis: Long = 0L,
+    ): MediaEntity = MediaEntity(
+        id = id,
+        relativePath = relativePath,
+        mimeType = mimeType,
+        width = width,
+        height = height,
+        encryptedSize = encryptedSize,
+        key = key.copyOf(),
+        nonce = nonce,
+        cipherSha256 = cipherSha256,
+        thumbnailMediaId = thumbnailMediaId,
+        durationMillis = durationMillis,
     )
+
+    private fun EncryptedMedia.toProtocolMedia(mimeType: String): EncryptedMediaV1 =
+        EncryptedMediaV1.newBuilder()
+            .setMediaId(id)
+            .setMimeType(mimeType)
+            .setEncryptedSize(encryptedSize)
+            .setMediaKey(ByteString.copyFrom(key))
+            .setMediaNonce(ByteString.copyFrom(nonce))
+            .setSha256(ByteString.copyFrom(cipherSha256))
+            .build()
+
+    private fun MediaEntity.toProtocolMedia(): EncryptedMediaV1 =
+        EncryptedMediaV1.newBuilder()
+            .setMediaId(id)
+            .setMimeType(mimeType)
+            .setEncryptedSize(encryptedSize)
+            .setMediaKey(ByteString.copyFrom(key))
+            .setMediaNonce(ByteString.copyFrom(nonce))
+            .setSha256(ByteString.copyFrom(cipherSha256))
+            .build()
 
     private fun MediaEntity.toEncryptedMedia(): EncryptedMedia = EncryptedMedia(
         id,
@@ -1147,15 +1437,19 @@ internal class LoveDovesRepository(
         const val ROLE_JOINER = "JOINER"
         const val KIND_TEXT = "TEXT"
         const val KIND_PHOTO = "PHOTO"
+        const val KIND_VIDEO = "VIDEO"
         const val DELIVERY_SENDING = "SENDING"
         const val DELIVERY_SENT = "SENT"
         const val DELIVERY_DELIVERED = "DELIVERED"
         const val DELIVERY_FAILED = "FAILED"
         const val MAX_TEXT_LENGTH = 4_000
         const val MAX_PHOTO_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
+        const val MAX_VIDEO_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
         private const val CAPABILITY_BYTES = 32
         private const val MAX_SIGNAL_MESSAGE_BYTES = 512 * 1024
         private const val MAX_PHOTO_EDGE = 4_096
+        private const val MAX_VIDEO_EDGE = 8_192
+        private const val MAX_VIDEO_DURATION_MILLIS = 24L * 60 * 60 * 1_000
         private const val PHOTO_KEY_BYTES = 32
         private const val PHOTO_NONCE_BYTES = 12
         private const val SHA256_BYTES = 32

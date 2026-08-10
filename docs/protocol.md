@@ -9,7 +9,7 @@ zu Klartext-Fallbacks verleiten.
 - `InviteV1`, `PairingReferenceV1`, `PairResponseV1` und
   `PairConfirmationV1`: kontolose Paarung und gegenseitige Bestätigung.
 - `EnvelopeV1`: Signal-Nachrichtentyp und Signal-Chiffretext.
-- `ConversationEventV1`: Text, Foto, Zustellbestätigung, Paarbestätigung,
+- `ConversationEventV1`: Text, Foto, Video, Zustellbestätigung, Paarbestätigung,
   Wiederherstellung und Gerätewiderruf.
 - `RecoveryManifestV1`, `RecoveryBatchV1`, `RecoveryRecordV1` und
   `DeviceRevocationV1`: idempotente Partner-Wiederherstellung.
@@ -19,6 +19,11 @@ Nonce und SHA-256 des verschlüsselten Blobs sowie einem getrennten Relay-
 Objekt. Der Empfänger importiert das Blob und den Datenbankeintrag in einer
 Transaktion; fehlt das Blob, bleibt das Envelope im lokalen Spool und wird
 später erneut verarbeitet.
+
+Ein Video verwendet `VideoMessageV1` und zwei getrennte `EncryptedMediaV1`-
+Objekte: das Video und sein Vorschaubild. Dauer und Abmessungen liegen im
+Signal-geschützten Ereignis. Beide Relay-Objekte besitzen unabhängige Schlüssel,
+Nonces und Prüfsummen.
 
 ## Relay-API
 

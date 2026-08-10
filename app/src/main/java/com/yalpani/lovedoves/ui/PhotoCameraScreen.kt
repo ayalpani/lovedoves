@@ -14,6 +14,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
@@ -52,6 +54,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal fun PhotoCameraScreen(
     onBack: () -> Unit,
     onUsePhoto: (jpeg: ByteArray, leftQuarterTurns: Int) -> Unit,
+    portraitControlsBottomOffset: Dp = 0.dp,
+    cameraChrome: @Composable BoxScope.() -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -180,6 +184,7 @@ internal fun PhotoCameraScreen(
             CameraSwitchButton(
                 contentDescription = "Kamera wechseln",
                 landscape = landscape,
+                portraitBottomOffset = portraitControlsBottomOffset,
                 onClick = {
                     lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
                         CameraSelector.LENS_FACING_FRONT
@@ -192,6 +197,7 @@ internal fun PhotoCameraScreen(
                 enabled = imageCapture != null && !isCapturing,
                 contentDescription = "Foto aufnehmen",
                 landscape = landscape,
+                portraitBottomOffset = portraitControlsBottomOffset,
                 onClick = cameraCapture@{
                     val capture = imageCapture ?: return@cameraCapture
                     val targetRotation = cameraTargetRotation(previewView.display?.rotation)
@@ -221,6 +227,7 @@ internal fun PhotoCameraScreen(
                     )
                 },
             )
+            cameraChrome()
         } else {
             PhotoConfirmationSurface(
                 photo = photo,
@@ -243,7 +250,7 @@ internal fun PhotoCameraScreen(
 }
 
 @Composable
-private fun CameraFocusMarker(point: Offset) {
+internal fun CameraFocusMarker(point: Offset) {
     Canvas(Modifier.fillMaxSize()) {
         val side = 48.dp.toPx()
         drawRect(

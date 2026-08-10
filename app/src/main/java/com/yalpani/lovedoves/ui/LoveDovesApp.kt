@@ -47,9 +47,10 @@ private const val PanelFadeDurationMillis = 200
 
 private sealed interface Overlay {
     data object Scanner : Overlay
-    data object Camera : Overlay
+    data object MediaCapture : Overlay
     data class Settings(val pair: PairStateEntity) : Overlay
     data class Photo(val mediaId: String) : Overlay
+    data class Video(val mediaId: String) : Overlay
 }
 
 private enum class ContentRoute { LOADING, PROFILE, PAIRING_HOME, PAIRING, CONVERSATION }
@@ -67,10 +68,10 @@ private val AppContentState.route: ContentRoute
 internal fun LoveDovesApp(
     session: VaultSession,
     incomingLink: String?,
-    pickedPhoto: Uri?,
+    pickedMedia: Uri?,
     onLinkConsumed: () -> Unit,
-    onPickPhoto: () -> Unit,
-    onPhotoConsumed: (Uri) -> Unit,
+    onPickMedia: () -> Unit,
+    onMediaConsumed: (Uri) -> Unit,
     onSystemPermissionPrompt: (Boolean) -> Unit,
     onAuthenticate: (() -> Unit) -> Unit,
     onDeleteAll: suspend () -> Unit,
@@ -87,18 +88,25 @@ internal fun LoveDovesApp(
     val controllerError by controller.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var overlay by remember { mutableStateOf<Overlay?>(null) }
-    var photoBusy by remember { mutableStateOf(false) }
+    var mediaBusy by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
-    val busy = controllerBusy || photoBusy
+    val busy = controllerBusy || mediaBusy
 
-    LaunchedEffect(pickedPhoto) {
-        if (pickedPhoto != null) {
-            photoBusy = true
-            runCatching { PhotoProcessor.fromPicker(context.contentResolver, pickedPhoto) }
-                .onSuccess(controller::sendPhoto)
-                .onFailure { localError = it.message ?: "Das Foto konnte nicht gelesen werden." }
-            photoBusy = false
-            onPhotoConsumed(pickedPhoto)
+    LaunchedEffect(pickedMedia) {
+        if (pickedMedia != null) {
+            mediaBusy = true
+            val mimeType = context.contentResolver.getType(pickedMedia).orEmpty()
+            if (mimeType.startsWith("video/")) {
+                runCatching { VideoProcessor.fromPicker(context, pickedMedia) }
+                    .onSuccess(controller::sendVideo)
+                    .onFailure { localError = it.message ?: "Das Video konnte nicht gelesen werden." }
+            } else {
+                runCatching { PhotoProcessor.fromPicker(context.contentResolver, pickedMedia) }
+                    .onSuccess(controller::sendPhoto)
+                    .onFailure { localError = it.message ?: "Das Foto konnte nicht gelesen werden." }
+            }
+            mediaBusy = false
+            onMediaConsumed(pickedMedia)
         }
     }
     val notificationPermission = rememberLauncherForActivityResult(
@@ -182,11 +190,11 @@ internal fun LoveDovesApp(
                         photoBitmaps = photoBitmaps,
                         busy = busy,
                         onSend = controller::sendText,
-                        onCamera = { overlay = Overlay.Camera },
-                        onGallery = onPickPhoto,
+                        onAttachment = { overlay = Overlay.MediaCapture },
                         onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
                         onPhoto = { overlay = Overlay.Photo(it) },
+                        onVideo = { overlay = Overlay.Video(it) },
                     )
                 }
             }
@@ -195,10 +203,11 @@ internal fun LoveDovesApp(
                 targetState = overlay,
                 contentKey = {
                     when (it) {
-                        Overlay.Camera -> "camera"
+                        Overlay.MediaCapture -> "media-capture"
                         Overlay.Scanner -> "scanner"
                         is Overlay.Settings -> "settings"
                         is Overlay.Photo -> "photo"
+                        is Overlay.Video -> "video"
                         null -> "none"
                     }
                 },
@@ -227,13 +236,19 @@ internal fun LoveDovesApp(
                                 },
                             )
                         }
-                        Overlay.Camera -> CameraPermissionGate(onSystemPermissionPrompt) {
-                            PhotoCameraScreen(
-                                onBack = { overlay = null },
+                        Overlay.MediaCapture -> CameraPermissionGate(onSystemPermissionPrompt) {
+                            MediaCaptureScreen(
+                                onClose = { overlay = null },
+                                onPickGallery = {
+                                    overlay = null
+                                    onPickMedia()
+                                },
+                                onSystemPermissionPrompt = onSystemPermissionPrompt,
+                                onError = { localError = it },
                                 onUsePhoto = { jpeg, leftQuarterTurns ->
                                     overlay = null
                                     scope.launch {
-                                        photoBusy = true
+                                        mediaBusy = true
                                         runCatching {
                                             PhotoProcessor.fromCamera(jpeg, leftQuarterTurns)
                                         }
@@ -242,8 +257,12 @@ internal fun LoveDovesApp(
                                                 localError = it.message ?:
                                                     "Das Foto konnte nicht verarbeitet werden."
                                             }
-                                        photoBusy = false
+                                        mediaBusy = false
                                     }
+                                },
+                                onUseVideo = { video ->
+                                    overlay = null
+                                    controller.sendVideo(video)
                                 },
                             )
                         }
@@ -266,6 +285,10 @@ internal fun LoveDovesApp(
                         is Overlay.Photo -> PhotoDetailScreen(
                             destination.mediaId,
                             photoBitmaps,
+                        ) { overlay = null }
+                        is Overlay.Video -> VideoDetailScreen(
+                            destination.mediaId,
+                            controller,
                         ) { overlay = null }
                         null -> Unit
                     }

@@ -76,6 +76,8 @@ internal data class MediaEntity(
     val key: ByteArray,
     val nonce: ByteArray,
     val cipherSha256: ByteArray,
+    val thumbnailMediaId: String? = null,
+    val durationMillis: Long = 0L,
 )
 
 @Entity(tableName = "outbox")
@@ -231,7 +233,7 @@ internal interface ProcessedObjectDao {
         SignalRecordEntity::class,
         ProcessedObjectEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
@@ -254,7 +256,7 @@ internal abstract class VaultDatabase : RoomDatabase() {
                 "love-doves-vault.db",
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
 
@@ -304,6 +306,15 @@ internal abstract class VaultDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE pending_pairing ADD COLUMN recoveryOldIdentityKey BLOB",
+                )
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE media ADD COLUMN thumbnailMediaId TEXT")
+                db.execSQL(
+                    "ALTER TABLE media ADD COLUMN durationMillis INTEGER NOT NULL DEFAULT 0",
                 )
             }
         }

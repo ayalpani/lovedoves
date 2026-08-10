@@ -6,7 +6,7 @@ Stand: August 2026. Love Doves hat noch kein unabhängiges Sicherheitsaudit.
 
 Love Doves schützt Inhalte gegen einen kompromittierten Relay, eine kopierte
 App-Datenablage und neugierige Mitbenutzer eines gesperrten Geräts. Der Relay
-erhält keine Signal-, Tresor- oder Foto-Schlüssel. Lokale Inhalte sind in
+erhält keine Signal-, Tresor- oder Medien-Schlüssel. Lokale Inhalte sind in
 SQLCipher beziehungsweise AES-256-GCM verschlüsselt; private Signal-Schlüssel
 verlassen den Tresor nicht.
 
@@ -28,7 +28,7 @@ Kein Schutz besteht gegen:
   Relay, Hostinganbieter, Google/FCM oder Netzbetreiber;
 - Denial of Service, Löschen oder Zurückhalten noch nicht empfangener Pakete.
 
-Bereits empfangene Fotos und Nachrichten können vom Partnergerät technisch
+Bereits empfangene Fotos, Videos und Nachrichten können vom Partnergerät technisch
 nicht zurückgerufen werden.
 
 ## Server- und Metadatenschutz

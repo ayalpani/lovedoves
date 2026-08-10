@@ -21,9 +21,9 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
 
 ## Security invariants
 
-- Never persist message text, decoded photos, vault keys, capabilities, push
-  tokens, or pairing payloads in logs, screenshots, temporary files, backups,
-  crash reports, or fixtures.
+- Never persist message text, decoded photos, unencrypted videos, vault keys,
+  capabilities, push tokens, or pairing payloads in logs, screenshots,
+  temporary files, backups, crash reports, or fixtures.
 - Keep Android backup disabled and keep sensitive screens behind `FLAG_SECURE`.
 - The relay treats object bodies as opaque bytes and deletes acknowledged or
   expired objects. It never receives message or media keys.
@@ -66,3 +66,5 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   spacing rather than additional font sizes.
 - When video or emoji selection enters scope, start from Spur's `VideoCameraScreen` and
   `EmojiPicker` rather than creating parallel implementations.
+- Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
+  encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.

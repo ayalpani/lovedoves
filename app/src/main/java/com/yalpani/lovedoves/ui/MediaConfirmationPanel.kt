@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -29,6 +30,9 @@ internal fun AnimatedMediaConfirmationPanel(
     landscape: Boolean,
     onDiscard: () -> Unit,
     onAccept: () -> Unit,
+    acceptLabel: String = "Foto verwenden",
+    discardLabel: String = "Nochmal",
+    metadata: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val visibility = remember {
         MutableTransitionState(false).apply { targetState = true }
@@ -76,8 +80,9 @@ internal fun AnimatedMediaConfirmationPanel(
                         alignment = if (landscape) Alignment.CenterVertically else Alignment.Top,
                     ),
                 ) {
-                    LovePrimaryButton("Foto verwenden", onClick = onAccept)
-                    LoveSecondaryButton("Nochmal", onClick = onDiscard)
+                    metadata?.invoke(this)
+                    LovePrimaryButton(acceptLabel, onClick = onAccept)
+                    LoveSecondaryButton(discardLabel, onClick = onDiscard)
                 }
             }
         }

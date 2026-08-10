@@ -10,8 +10,8 @@ Tresor erhalten ist.
 3. Das neue Gerät erzeugt lokal eine neue Signal-Identität und durchläuft den
    QR-/Link- sowie Sicherheitswortvergleich.
 4. Nach beidseitiger biometrischer Bestätigung sendet das verbliebene Gerät ein
-   Manifest und anschließend einzelne, idempotente Recovery-Batches. Fotos
-   bleiben getrennte verschlüsselte Objekte.
+   Manifest und anschließend einzelne, idempotente Recovery-Batches. Fotos,
+   Videos und Video-Vorschaubilder bleiben getrennte verschlüsselte Objekte.
 5. Ein `DeviceRevocationV1` bindet den alten an den neuen öffentlichen
    Identitätsschlüssel.
 
