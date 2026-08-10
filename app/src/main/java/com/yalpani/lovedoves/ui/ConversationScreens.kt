@@ -43,11 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,9 +64,6 @@ import com.yalpani.lovedoves.domain.PairingMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlinx.coroutines.flow.Flow
-import me.saket.telephoto.zoomable.ZoomableImage
-import me.saket.telephoto.zoomable.ZoomableImageSource
 
 @Composable
 internal fun ConversationScreen(
@@ -634,10 +629,8 @@ private fun EncryptedPhotoImage(
         if (rendered == null) {
             CircularProgressIndicator()
         } else if (zoomable) {
-            val painter = remember(rendered) { BitmapPainter(rendered.asImageBitmap()) }
-            val source = remember(painter) { DecryptedPhotoSource(painter) }
-            ZoomableImage(
-                image = source,
+            ZoomablePhoto(
+                bitmap = rendered,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
@@ -651,15 +644,6 @@ private fun EncryptedPhotoImage(
             )
         }
     }
-}
-
-private class DecryptedPhotoSource(
-    private val painter: BitmapPainter,
-) : ZoomableImageSource {
-    @Composable
-    override fun resolve(canvasSize: Flow<Size>) = ZoomableImageSource.ResolveResult(
-        ZoomableImageSource.PainterDelegate(painter),
-    )
 }
 
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
