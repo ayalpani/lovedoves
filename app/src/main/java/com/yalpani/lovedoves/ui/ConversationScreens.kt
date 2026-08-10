@@ -257,37 +257,41 @@ private fun MessageBubble(
         Modifier.fillMaxWidth(),
         horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
     ) {
-        Surface(
-            color = if (message.outgoing) LoveBlush else LoveMist,
-            shape = RoundedCornerShape(
-                topStart = 22.dp,
-                topEnd = 22.dp,
-                bottomStart = if (message.outgoing) 22.dp else 6.dp,
-                bottomEnd = if (message.outgoing) 6.dp else 22.dp,
-            ),
+        Box(
             modifier = Modifier.fillMaxWidth(0.82f),
+            contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
         ) {
-            when (message.kind) {
-                LoveDovesRepository.KIND_PHOTO -> {
-                    val mediaId = requireNotNull(message.mediaId)
-                    EncryptedPhotoImage(
-                        mediaId = mediaId,
-                        controller = controller,
-                        contentDescription = if (message.outgoing) {
-                            "Gesendetes Foto"
-                        } else {
-                            "Empfangenes Foto"
-                        },
-                        modifier = Modifier.fillMaxWidth().height(260.dp)
-                            .clickable { onPhoto(mediaId) },
-                        contentScale = ContentScale.Crop,
+            Surface(
+                color = if (message.outgoing) LoveBlush else LoveMist,
+                shape = RoundedCornerShape(
+                    topStart = 22.dp,
+                    topEnd = 22.dp,
+                    bottomStart = if (message.outgoing) 22.dp else 6.dp,
+                    bottomEnd = if (message.outgoing) 6.dp else 22.dp,
+                ),
+            ) {
+                when (message.kind) {
+                    LoveDovesRepository.KIND_PHOTO -> {
+                        val mediaId = requireNotNull(message.mediaId)
+                        EncryptedPhotoImage(
+                            mediaId = mediaId,
+                            controller = controller,
+                            contentDescription = if (message.outgoing) {
+                                "Gesendetes Foto"
+                            } else {
+                                "Empfangenes Foto"
+                            },
+                            modifier = Modifier.fillMaxWidth().height(260.dp)
+                                .clickable { onPhoto(mediaId) },
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                    else -> Text(
+                        message.body.orEmpty(),
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                else -> Text(
-                    message.body.orEmpty(),
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
             }
         }
         Row(
