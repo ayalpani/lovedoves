@@ -111,6 +111,7 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.protobuf:protobuf-javalite:4.35.1")
     implementation("com.google.zxing:core:3.5.4")
+    implementation("me.saket.telephoto:zoomable-image:0.19.0")
     implementation("net.zetetic:sqlcipher-android:4.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.signal:libsignal-android:0.100.0")

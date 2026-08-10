@@ -43,9 +43,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +66,9 @@ import com.yalpani.lovedoves.domain.PairingMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.flow.Flow
+import me.saket.telephoto.zoomable.ZoomableImage
+import me.saket.telephoto.zoomable.ZoomableImageSource
 
 @Composable
 internal fun ConversationScreen(
@@ -588,6 +593,8 @@ internal fun PhotoDetailScreen(
             "Foto in voller Größe",
             Modifier.fillMaxSize(),
             ContentScale.Fit,
+            zoomable = true,
+            backgroundColor = Color.Black,
         )
         IconButton(
             onClick = onBack,
@@ -604,6 +611,8 @@ private fun EncryptedPhotoImage(
     contentDescription: String,
     modifier: Modifier,
     contentScale: ContentScale,
+    zoomable: Boolean = false,
+    backgroundColor: Color = LoveMist,
 ) {
     val bitmap by produceState<Bitmap?>(null, mediaId, controller) {
         val bytes = controller.photoBytes(mediaId)
@@ -617,9 +626,18 @@ private fun EncryptedPhotoImage(
     DisposableEffect(rendered) {
         onDispose { rendered?.recycle() }
     }
-    Box(modifier.background(LoveMist), contentAlignment = Alignment.Center) {
+    Box(modifier.background(backgroundColor), contentAlignment = Alignment.Center) {
         if (rendered == null) {
             CircularProgressIndicator()
+        } else if (zoomable) {
+            val painter = remember(rendered) { BitmapPainter(rendered.asImageBitmap()) }
+            val source = remember(painter) { DecryptedPhotoSource(painter) }
+            ZoomableImage(
+                image = source,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale,
+            )
         } else {
             Image(
                 rendered.asImageBitmap(),
@@ -629,6 +647,15 @@ private fun EncryptedPhotoImage(
             )
         }
     }
+}
+
+private class DecryptedPhotoSource(
+    private val painter: BitmapPainter,
+) : ZoomableImageSource {
+    @Composable
+    override fun resolve(canvasSize: Flow<Size>) = ZoomableImageSource.ResolveResult(
+        ZoomableImageSource.PainterDelegate(painter),
+    )
 }
 
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
