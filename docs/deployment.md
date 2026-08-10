@@ -39,7 +39,9 @@ ausschließlich außerhalb des Repositorys liegt. Der VHost liefert außerdem
 Einladungen direkt Love Doves zuordnen kann.
 
 Der Ablauf auf dem Host ist: Source nach `/opt/lovedoves/source` aktualisieren,
-Container neu bauen, lokalen Healthcheck durchführen, Nginx-Konfiguration testen
-und neu laden, anschließend DNS/TLS und den öffentlichen Healthcheck getrennt
-prüfen. FCM bleibt aus, solange kein externes Servicekonto konfiguriert ist;
+Container neu bauen, lokalen Healthcheck durchführen und vor dem ersten
+Zertifikat kurz `deploy/lovedoves.bootstrap.nginx.conf` aktivieren. Nach DNS und
+erfolgreichem ACME-Lauf ersetzt `deploy/lovedoves.nginx.conf` diesen VHost.
+Beide Konfigurationen werden vor dem Neuladen geprüft. FCM bleibt aus, solange
+kein externes Servicekonto konfiguriert ist;
 manuelle Synchronisierung und WorkManager funktionieren unabhängig davon.
