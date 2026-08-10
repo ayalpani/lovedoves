@@ -2,7 +2,9 @@ package com.yalpani.lovedoves.ui
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -10,7 +12,9 @@ import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,19 +24,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // Ported from Spur's CameraScreen; encrypted-app policy keeps captured media in memory.
@@ -51,11 +63,14 @@ internal fun PhotoCameraScreen(
         }
     }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
     var cameraPreview by remember { mutableStateOf<Preview?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var capturedPhoto by remember { mutableStateOf<CapturedCameraPhoto?>(null) }
     var leftQuarterTurns by remember { mutableStateOf(0) }
     var isCapturing by remember { mutableStateOf(false) }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var focusMarkerVersion by remember { mutableIntStateOf(0) }
     val transferred = remember { AtomicBoolean(false) }
 
     CameraSystemBars()
@@ -67,6 +82,12 @@ internal fun PhotoCameraScreen(
     }
 
     BackHandler { discardAndClose() }
+
+    LaunchedEffect(focusMarkerVersion) {
+        if (focusMarkerVersion == 0) return@LaunchedEffect
+        delay(1_200)
+        focusPoint = null
+    }
 
     DisposableEffect(lifecycleOwner, lensFacing, previewView, landscape, capturedPhoto) {
         if (capturedPhoto != null) {
@@ -100,7 +121,7 @@ internal fun PhotoCameraScreen(
                         .build()
 
                     provider.unbindAll()
-                    provider.bindToLifecycle(lifecycleOwner, selector, useCases)
+                    camera = provider.bindToLifecycle(lifecycleOwner, selector, useCases)
                     cameraPreview = preview
                     imageCapture = capture
                 }
@@ -112,6 +133,7 @@ internal fun PhotoCameraScreen(
 
             onDispose {
                 disposed = true
+                camera = null
                 cameraPreview = null
                 imageCapture = null
                 if (providerFuture.isDone) runCatching { providerFuture.get().unbindAll() }
@@ -133,6 +155,24 @@ internal fun PhotoCameraScreen(
                     .fillMaxSize()
                     .semantics { contentDescription = "Kameravorschau" },
             )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(camera) {
+                        detectTapGestures { tap ->
+                            val activeCamera = camera ?: return@detectTapGestures
+                            val point = previewView.meteringPointFactory.createPoint(tap.x, tap.y)
+                            val action = FocusMeteringAction.Builder(
+                                point,
+                                FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE,
+                            ).setAutoCancelDuration(5, TimeUnit.SECONDS).build()
+                            activeCamera.cameraControl.startFocusAndMetering(action)
+                            focusPoint = tap
+                            focusMarkerVersion += 1
+                        }
+                    },
+            )
+            focusPoint?.let { point -> CameraFocusMarker(point) }
             CameraCloseButton(
                 contentDescription = "Kamera schließen",
                 onClick = ::discardAndClose,
@@ -199,6 +239,19 @@ internal fun PhotoCameraScreen(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun CameraFocusMarker(point: Offset) {
+    Canvas(Modifier.fillMaxSize()) {
+        val side = 48.dp.toPx()
+        drawRect(
+            color = Color.White.copy(alpha = 0.9f),
+            topLeft = Offset(point.x - side / 2f, point.y - side / 2f),
+            size = Size(side, side),
+            style = Stroke(width = 2.dp.toPx()),
+        )
     }
 }
 

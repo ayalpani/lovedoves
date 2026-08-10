@@ -51,9 +51,11 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
 - Keep the Love Doves photo camera aligned with Spur's `CameraScreen`, `CameraChrome`, and
   `MediaConfirmationPanel`: system-bar insets, full-sensor rotation, matching CameraX
   preview/capture viewport, camera switching, capture controls, confirmation motion, and
-  manual photo rotation. Center the captured photo inside the space not occupied by the
-  confirmation panel and keep pinch zoom, double-tap zoom, and panning active there. Love
-  Doves must retain its stricter memory-only plaintext policy.
+  manual photo rotation. Tapping the live preview must set CameraX autofocus and exposure
+  metering at that exact point and show brief visual feedback. Center the captured photo
+  inside the space not occupied by the confirmation panel and keep pinch zoom, double-tap
+  zoom, and panning active there. Love Doves must retain its stricter memory-only plaintext
+  policy.
 - Keep the full-screen photo view aligned with Spur's `PhotoDetail`: use Telephoto for native
   pinch zoom, double-tap zoom, and panning while keeping decrypted image data memory-only.
 - When video or emoji selection enters scope, start from Spur's `VideoCameraScreen` and
