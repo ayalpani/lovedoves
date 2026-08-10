@@ -66,5 +66,10 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   spacing rather than additional font sizes.
 - When video or emoji selection enters scope, start from Spur's `VideoCameraScreen` and
   `EmojiPicker` rather than creating parallel implementations.
+- In the conversation, present emoji selection as a fixed bottom-attached keyboard panel, not
+  a draggable sheet. Keep the composer stationary and give vertical scroll exclusively to the
+  emoji grid.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
   encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.
+- Keep the red recording-stop square visibly inset inside the circular capture ring; it must
+  never reach or protrude through that ring.

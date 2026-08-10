@@ -171,6 +171,7 @@ internal fun BoxScope.CameraCaptureButton(
     portraitBottomOffset: Dp = 0.dp,
     color: Color = Color.White,
     shape: Shape = CircleShape,
+    innerSize: Dp = 64.dp,
     onClick: () -> Unit,
 ) {
     Box(
@@ -183,14 +184,15 @@ internal fun BoxScope.CameraCaptureButton(
             )
             .size(78.dp)
             .border(4.dp, Color.White, CircleShape)
-            .padding(7.dp)
-            .background(color, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics {
                 this.contentDescription = contentDescription
                 role = Role.Button
             },
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(innerSize).background(color, shape))
+    }
 }
 
 @Composable

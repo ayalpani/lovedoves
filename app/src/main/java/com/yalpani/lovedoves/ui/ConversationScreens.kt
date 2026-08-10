@@ -3,11 +3,14 @@ package com.yalpani.lovedoves.ui
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -55,7 +58,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -75,7 +80,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 internal fun ConversationScreen(
     pair: PairStateEntity,
     messages: List<ConversationEventEntity>,
@@ -90,10 +94,11 @@ internal fun ConversationScreen(
 ) {
     var text by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
-    val emojiSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val configuration = LocalConfiguration.current
     val listState = rememberLazyListState()
+    BackHandler(enabled = showEmojiPicker) { showEmojiPicker = false }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -158,33 +163,64 @@ internal fun ConversationScreen(
                 }
             }
         }
-        MessageComposer(
-            text = text,
-            busy = busy,
-            onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
-            onEmoji = {
-                keyboard?.hide()
-                focusManager.clearFocus()
-                showEmojiPicker = true
-            },
-            onAttachment = onAttachment,
-            onSend = {
-                val message = text
-                text = ""
-                onSend(message)
-            },
-        )
-    }
-    if (showEmojiPicker) {
-        EmojiPickerBottomSheet(
-            sheetState = emojiSheetState,
-            onDismiss = { showEmojiPicker = false },
-            onEmojiPicked = { emoji ->
-                if (text.length + emoji.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
-                    text += emoji
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(LovePaper)
+                .imePadding()
+                .navigationBarsPadding(),
+        ) {
+            MessageComposer(
+                text = text,
+                busy = busy,
+                onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
+                onTextFocus = { showEmojiPicker = false },
+                onEmoji = {
+                    if (showEmojiPicker) {
+                        showEmojiPicker = false
+                    } else {
+                        keyboard?.hide()
+                        focusManager.clearFocus()
+                        showEmojiPicker = true
+                    }
+                },
+                onAttachment = {
+                    showEmojiPicker = false
+                    onAttachment()
+                },
+                onSend = {
+                    val message = text
+                    text = ""
+                    onSend(message)
+                },
+            )
+            AnimatedVisibility(
+                visible = showEmojiPicker,
+                enter = slideInVertically(tween(220)) { it } + fadeIn(tween(160)),
+                exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(140)),
+            ) {
+                Column {
+                    HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
+                    EmojiPickerKeyboard(
+                        modifier = Modifier.height(
+                            if (
+                                configuration.orientation ==
+                                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                            ) {
+                                220.dp
+                            } else {
+                                360.dp
+                            },
+                        ),
+                        onEmojiPicked = { emoji ->
+                            if (text.length + emoji.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
+                                text += emoji
+                            }
+                        },
+                    )
                 }
-            },
-        )
+            }
+        }
     }
 }
 
@@ -193,18 +229,14 @@ private fun MessageComposer(
     text: String,
     busy: Boolean,
     onTextChange: (String) -> Unit,
+    onTextFocus: () -> Unit,
     onEmoji: () -> Unit,
     onAttachment: () -> Unit,
     onSend: () -> Unit,
 ) {
     val canSend = text.isNotBlank() && !busy
     Row(
-        Modifier
-            .fillMaxWidth()
-            .background(LovePaper)
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -228,7 +260,10 @@ private fun MessageComposer(
                 BasicTextField(
                     value = text,
                     onValueChange = onTextChange,
-                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { if (it.isFocused) onTextFocus() }
+                        .padding(horizontal = 4.dp, vertical = 12.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
                     cursorBrush = SolidColor(LoveInk),
                     maxLines = 5,

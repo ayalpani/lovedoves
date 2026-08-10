@@ -361,6 +361,7 @@ internal fun VideoCameraScreen(
                 portraitBottomOffset = portraitControlsBottomOffset,
                 color = if (isFinalizing) Color.Gray else MaterialTheme.colorScheme.error,
                 shape = if (recording != null) RoundedCornerShape(8.dp) else CircleShape,
+                innerSize = if (recording != null) 34.dp else 64.dp,
                 onClick = {
                     if (recording == null) startRecording() else {
                         isFinalizing = true
