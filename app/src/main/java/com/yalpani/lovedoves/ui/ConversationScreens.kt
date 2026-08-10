@@ -21,11 +21,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,18 +52,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -94,11 +102,46 @@ internal fun ConversationScreen(
 ) {
     var text by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
+    var restoreKeyboard by remember { mutableStateOf(false) }
+    var lastKeyboardHeightPx by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val imeHeightPx = (
+        WindowInsets.ime.getBottom(density) -
+            WindowInsets.navigationBars.getBottom(density)
+        ).coerceAtLeast(0)
+    val fallbackEmojiHeight = if (
+        configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    ) {
+        220.dp
+    } else {
+        320.dp
+    }
+    val emojiKeyboardHeight = if (lastKeyboardHeightPx > 0) {
+        with(density) { lastKeyboardHeightPx.toDp() }
+    } else {
+        fallbackEmojiHeight
+    }
     val listState = rememberLazyListState()
-    BackHandler(enabled = showEmojiPicker) { showEmojiPicker = false }
+    BackHandler(enabled = showEmojiPicker) {
+        showEmojiPicker = false
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
+    LaunchedEffect(imeHeightPx, showEmojiPicker) {
+        if (!showEmojiPicker && imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
+    }
+    LaunchedEffect(restoreKeyboard, showEmojiPicker) {
+        if (restoreKeyboard && !showEmojiPicker) {
+            focusRequester.requestFocus()
+            withFrameNanos { }
+            keyboard?.show()
+            restoreKeyboard = false
+        }
+    }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -173,12 +216,16 @@ internal fun ConversationScreen(
             MessageComposer(
                 text = text,
                 busy = busy,
+                emojiPickerVisible = showEmojiPicker,
+                focusRequester = focusRequester,
                 onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
                 onTextFocus = { showEmojiPicker = false },
                 onEmoji = {
                     if (showEmojiPicker) {
                         showEmojiPicker = false
+                        restoreKeyboard = true
                     } else {
+                        if (imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
                         keyboard?.hide()
                         focusManager.clearFocus()
                         showEmojiPicker = true
@@ -202,16 +249,7 @@ internal fun ConversationScreen(
                 Column {
                     HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
                     EmojiPickerKeyboard(
-                        modifier = Modifier.height(
-                            if (
-                                configuration.orientation ==
-                                android.content.res.Configuration.ORIENTATION_LANDSCAPE
-                            ) {
-                                220.dp
-                            } else {
-                                360.dp
-                            },
-                        ),
+                        modifier = Modifier.height(emojiKeyboardHeight),
                         onEmojiPicked = { emoji ->
                             if (text.length + emoji.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
                                 text += emoji
@@ -228,6 +266,8 @@ internal fun ConversationScreen(
 private fun MessageComposer(
     text: String,
     busy: Boolean,
+    emojiPickerVisible: Boolean,
+    focusRequester: FocusRequester,
     onTextChange: (String) -> Unit,
     onTextFocus: () -> Unit,
     onEmoji: () -> Unit,
@@ -255,13 +295,18 @@ private fun MessageComposer(
                     enabled = !busy,
                     modifier = Modifier.size(44.dp),
                 ) {
-                    SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                    if (emojiPickerVisible) {
+                        KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
+                    } else {
+                        SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                    }
                 }
                 BasicTextField(
                     value = text,
                     onValueChange = onTextChange,
                     modifier = Modifier
                         .weight(1f)
+                        .focusRequester(focusRequester)
                         .onFocusChanged { if (it.isFocused) onTextFocus() }
                         .padding(horizontal = 4.dp, vertical = 12.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),

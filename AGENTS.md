@@ -68,7 +68,9 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   `EmojiPicker` rather than creating parallel implementations.
 - In the conversation, present emoji selection as a fixed bottom-attached keyboard panel, not
   a draggable sheet. Keep the composer stationary and give vertical scroll exclusively to the
-  emoji grid.
+  emoji grid. Keep eight compact, generously spaced emojis per row, place search above the grid,
+  match the panel to the last measured system-keyboard height, and turn the composer toggle into
+  a keyboard icon while the emoji panel is open.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
   encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.
 - Keep the red recording-stop square visibly inset inside the circular capture ring; it must
