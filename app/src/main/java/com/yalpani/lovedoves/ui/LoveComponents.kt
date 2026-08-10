@@ -1,7 +1,9 @@
 package com.yalpani.lovedoves.ui
 
+import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -10,11 +12,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,14 +30,69 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import com.yalpani.lovedoves.LoveInk
 
 private const val IconTextLabelAlpha = 0.68f
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun LoveModalBottomSheet(
+    onDismissRequest: () -> Unit,
+    sheetState: SheetState,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        containerColor = Color.White,
+    ) {
+        LightSheetNavigationBar()
+        content()
+    }
+}
+
+@Composable
+@Suppress("DEPRECATION")
+private fun LightSheetNavigationBar() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        val previousColor = window?.navigationBarColor
+        val previousContrastEnforced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window?.isNavigationBarContrastEnforced
+        } else {
+            null
+        }
+        val insetsController = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        val previousLightIcons = insetsController?.isAppearanceLightNavigationBars
+
+        window?.navigationBarColor = Color.White.toArgb()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window?.isNavigationBarContrastEnforced = false
+        }
+        insetsController?.isAppearanceLightNavigationBars = Color.White.luminance() > 0.5f
+
+        onDispose {
+            if (previousColor != null) window.navigationBarColor = previousColor
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && previousContrastEnforced != null) {
+                window?.isNavigationBarContrastEnforced = previousContrastEnforced
+            }
+            if (previousLightIcons != null) {
+                insetsController?.isAppearanceLightNavigationBars = previousLightIcons
+            }
+        }
+    }
+}
 
 @Composable
 internal fun LovePrimaryButton(

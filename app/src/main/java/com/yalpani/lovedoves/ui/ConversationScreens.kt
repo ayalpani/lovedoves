@@ -2,6 +2,13 @@ package com.yalpani.lovedoves.ui
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,11 +35,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -326,6 +336,7 @@ private fun MessageBubble(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun SettingsScreen(
     pair: PairStateEntity,
     busy: Boolean,
@@ -335,7 +346,9 @@ internal fun SettingsScreen(
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
     var recoveryStep by remember { mutableStateOf<RecoveryStep?>(null) }
-    BackHandler(onBack = onBack)
+    val deleteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val recoverySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    BackHandler(enabled = !confirmDelete && recoveryStep == null, onBack = onBack)
     Column(
         Modifier.fillMaxSize().background(LovePaper),
     ) {
@@ -402,69 +415,77 @@ internal fun SettingsScreen(
         }
     }
     if (confirmDelete) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { confirmDelete = false }) {
-            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Wirklich alles auf diesem Handy löschen?", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "Das andere Handy behält bereits empfangene Inhalte. Diese Aktion kann nicht rückgängig gemacht werden.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    LovePrimaryButton(
-                        "Verbindung und Daten löschen",
-                        onClick = onDelete,
-                        destructive = true,
-                    )
-                    LoveSecondaryButton("Abbrechen", onClick = { confirmDelete = false })
-                }
+        LoveModalBottomSheet(
+            onDismissRequest = { confirmDelete = false },
+            sheetState = deleteSheetState,
+        ) {
+            SettingsSheetContent(
+                title = "Wirklich alles auf diesem Handy löschen?",
+                description = "Das andere Handy behält bereits empfangene Inhalte. Diese Aktion kann nicht rückgängig gemacht werden.",
+            ) {
+                LovePrimaryButton(
+                    "Verbindung und Daten löschen",
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    },
+                    destructive = true,
+                )
+                LoveSecondaryButton("Abbrechen", onClick = { confirmDelete = false })
             }
         }
     }
-    if (recoveryStep == RecoveryStep.CONFIRM) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
-            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        "Verlorenes Partnergerät ersetzen?",
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                    Text(
-                        "Das bisherige Partnergerät verliert den Zugang. Danach verbindet ihr das neue Handy und vergleicht neue Sicherheitswörter.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    LovePrimaryButton(
-                        "Weiter",
-                        onClick = { recoveryStep = RecoveryStep.METHOD },
-                    )
-                    LoveSecondaryButton("Abbrechen", onClick = { recoveryStep = null })
-                }
-            }
-        }
-    }
-    if (recoveryStep == RecoveryStep.METHOD) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { recoveryStep = null }) {
-            Surface(color = Color.White, shape = RoundedCornerShape(28.dp)) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Wo seid ihr gerade?", style = MaterialTheme.typography.headlineSmall)
-                    Text(
-                        "Das bestimmt nur, wie ihr das neue Handy verbindet.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    LovePrimaryButton(
-                        "Am selben Ort",
-                        onClick = {
-                            recoveryStep = null
-                            onRecovery(PairingMode.IN_PERSON)
-                        },
-                    )
-                    LoveSecondaryButton(
-                        "An verschiedenen Orten",
-                        onClick = {
-                            recoveryStep = null
-                            onRecovery(PairingMode.REMOTE)
-                        },
-                    )
-                    LoveSecondaryButton("Zurück", onClick = { recoveryStep = RecoveryStep.CONFIRM })
+    recoveryStep?.let { currentStep ->
+        LoveModalBottomSheet(
+            onDismissRequest = { recoveryStep = null },
+            sheetState = recoverySheetState,
+        ) {
+            AnimatedContent(
+                targetState = currentStep,
+                transitionSpec = {
+                    val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                    slideInHorizontally(tween(220)) { width -> direction * width } +
+                        fadeIn(tween(220)) togetherWith
+                        slideOutHorizontally(tween(220)) { width -> -direction * width } +
+                        fadeOut(tween(220))
+                },
+                label = "recovery-step",
+            ) { step ->
+                when (step) {
+                    RecoveryStep.CONFIRM -> SettingsSheetContent(
+                        title = "Verlorenes Partnergerät ersetzen?",
+                        description = "Das bisherige Partnergerät verliert den Zugang. Danach verbindet ihr das neue Handy und vergleicht neue Sicherheitswörter.",
+                    ) {
+                        LovePrimaryButton(
+                            "Weiter",
+                            onClick = { recoveryStep = RecoveryStep.METHOD },
+                        )
+                        LoveSecondaryButton("Abbrechen", onClick = { recoveryStep = null })
+                    }
+
+                    RecoveryStep.METHOD -> SettingsSheetContent(
+                        title = "Wo seid ihr gerade?",
+                        description = "Das bestimmt nur, wie ihr das neue Handy verbindet.",
+                    ) {
+                        LovePrimaryButton(
+                            "Am selben Ort",
+                            onClick = {
+                                recoveryStep = null
+                                onRecovery(PairingMode.IN_PERSON)
+                            },
+                        )
+                        LoveSecondaryButton(
+                            "An verschiedenen Orten",
+                            onClick = {
+                                recoveryStep = null
+                                onRecovery(PairingMode.REMOTE)
+                            },
+                        )
+                        LoveSecondaryButton(
+                            "Zurück",
+                            onClick = { recoveryStep = RecoveryStep.CONFIRM },
+                        )
+                    }
                 }
             }
         }
@@ -563,13 +584,47 @@ private fun SettingsDeleteItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            DeleteIcon(modifier = Modifier.size(32.dp), color = color)
+            DeleteIcon(modifier = Modifier.size(24.dp), color = color)
             SettingsRowTitle(
                 text = label,
                 modifier = Modifier.weight(1f),
                 color = color,
             )
         }
+    }
+}
+
+@Composable
+private fun SettingsSheetContent(
+    title: String,
+    description: String,
+    actions: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Text(
+            text = description,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        actions()
     }
 }
 
