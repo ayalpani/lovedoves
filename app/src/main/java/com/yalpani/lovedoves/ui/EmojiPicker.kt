@@ -2,10 +2,11 @@ package com.yalpani.lovedoves.ui
 
 import android.content.Context
 import android.icu.lang.UCharacter
+import android.util.TypedValue
 import android.view.ContextThemeWrapper
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.util.TypedValue
 import android.widget.TextView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import com.yalpani.lovedoves.R
 import androidx.emoji2.emojipicker.R as EmojiPickerResources
 import java.text.Normalizer
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -113,7 +115,10 @@ internal fun EmojiPickerKeyboard(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(EMOJI_COLUMNS),
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                contentPadding = PaddingValues(
+                    horizontal = EMOJI_GRID_HORIZONTAL_PADDING_DP.dp,
+                    vertical = EMOJI_GRID_VERTICAL_PADDING_DP.dp,
+                ),
             ) {
                 items(searchResults, key = EmojiSearchEntry::emoji) { entry ->
                     Box(
@@ -200,7 +205,20 @@ private fun EmojiPickerView.installCompactEmojiRendering() {
                 CATEGORY_TITLE_SIZE_SP,
             )
         }
+        val horizontalPadding =
+            (EMOJI_GRID_HORIZONTAL_PADDING_DP * resources.displayMetrics.density).roundToInt()
+        val verticalPadding =
+            (EMOJI_GRID_VERTICAL_PADDING_DP * resources.displayMetrics.density).roundToInt()
+        body.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
         header.layoutManager = LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
+        header.addOnItemTouchListener(
+            object : RecyclerView.SimpleOnItemTouchListener() {
+                override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) body.stopScroll()
+                    return false
+                }
+            },
+        )
         var selectedCategory = 0
         val keepSelectedCategoryVisible = Runnable {
             val layoutManager = header.layoutManager as? LinearLayoutManager ?: return@Runnable
@@ -319,8 +337,10 @@ private fun normalizeSearchText(value: String): String = Normalizer.normalize(va
     .replace("ß", "ss")
 
 private const val EMOJI_COLUMNS = 8
+private const val EMOJI_GRID_HORIZONTAL_PADDING_DP = 10
+private const val EMOJI_GRID_VERTICAL_PADDING_DP = 4
 private const val EMOJI_VIEW_CLASS = "androidx.emoji2.emojipicker.EmojiView"
-private const val NATIVE_EMOJI_SCALE = 0.78f
+private const val NATIVE_EMOJI_SCALE = 0.8f
 private const val CATEGORY_TITLE_SIZE_SP = 12f
 private val SEARCH_EMOJI_SIZE = 24.sp
 private const val ZERO_WIDTH_JOINER = 0x200D

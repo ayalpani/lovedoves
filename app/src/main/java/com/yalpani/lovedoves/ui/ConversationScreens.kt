@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -164,6 +165,12 @@ internal fun ConversationScreen(
             keyboard?.show()
         }
     }
+    LaunchedEffect(showEmojiPicker, inputTransition) {
+        if (showEmojiPicker && inputTransition != ComposerInputTransition.TO_KEYBOARD) {
+            withFrameNanos { }
+            keyboard?.hide()
+        }
+    }
     LaunchedEffect(inputTransition, imeHeightPx) {
         when {
             inputTransition == ComposerInputTransition.TO_EMOJI && imeHeightPx == 0 -> {
@@ -274,6 +281,7 @@ internal fun ConversationScreen(
                         inputTransition = ComposerInputTransition.TO_KEYBOARD
                     } else {
                         if (imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
+                        focusRequester.requestFocus()
                         showEmojiPicker = true
                         inputTransition = if (imeHeightPx > 0) {
                             ComposerInputTransition.TO_EMOJI
@@ -281,7 +289,6 @@ internal fun ConversationScreen(
                             ComposerInputTransition.NONE
                         }
                         keyboard?.hide()
-                        focusManager.clearFocus()
                     }
                 },
                 onAttachment = {
@@ -373,6 +380,7 @@ private fun MessageComposer(
                         .padding(horizontal = 4.dp, vertical = 12.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
                     cursorBrush = SolidColor(LoveInk),
+                    keyboardOptions = KeyboardOptions(showKeyboardOnFocus = !emojiPickerVisible),
                     maxLines = 5,
                     decorationBox = { innerTextField ->
                         Box {
