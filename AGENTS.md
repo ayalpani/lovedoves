@@ -73,7 +73,10 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   a keyboard icon while the emoji panel is open. Once measured, keep keyboard and picker in one
   fixed-height input slot so the conversation never resizes while switching between them. Preserve
   and advance the composer selection when inserting emojis, and fully close the IME before opening
-  media capture.
+  media capture. Keep a duplicated `Liebe` category directly after recents, use compact section
+  titles, and keep the category rail horizontally scrollable with its active category visible.
+- Keep the launcher icon as a generously inset black heart on the shared light-pink `LoveBlush`
+  background.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
   encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.
 - Keep the red recording-stop square visibly inset inside the circular capture ring; it must

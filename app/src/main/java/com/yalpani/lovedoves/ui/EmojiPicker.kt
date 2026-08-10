@@ -5,6 +5,8 @@ import android.icu.lang.UCharacter
 import android.view.ContextThemeWrapper
 import android.view.View
 import android.view.ViewGroup
+import android.util.TypedValue
+import android.widget.TextView
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.emoji2.emojipicker.EmojiPickerView
 import androidx.emoji2.emojipicker.RecentEmojiProvider
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.LoveMist
@@ -184,13 +187,39 @@ private fun EmojiPickerView.installCompactEmojiRendering() {
     fun installWhenReady() {
         if (installed) return
         val body = findViewById<RecyclerView>(EmojiPickerResources.id.emoji_picker_body) ?: return
+        val header = findViewById<RecyclerView>(EmojiPickerResources.id.emoji_picker_header) ?: return
+        val headerAdapter = header.adapter ?: return
         installed = true
         fun compact(view: View) {
             if (view.javaClass.name == EMOJI_VIEW_CLASS) {
                 view.scaleX = NATIVE_EMOJI_SCALE
                 view.scaleY = NATIVE_EMOJI_SCALE
             }
+            view.findViewById<TextView?>(EmojiPickerResources.id.category_name)?.setTextSize(
+                TypedValue.COMPLEX_UNIT_SP,
+                CATEGORY_TITLE_SIZE_SP,
+            )
         }
+        header.layoutManager = LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
+        var selectedCategory = 0
+        val keepSelectedCategoryVisible = Runnable {
+            val layoutManager = header.layoutManager as? LinearLayoutManager ?: return@Runnable
+            if (selectedCategory !in
+                layoutManager.findFirstCompletelyVisibleItemPosition()..
+                layoutManager.findLastCompletelyVisibleItemPosition()
+            ) {
+                header.smoothScrollToPosition(selectedCategory)
+            }
+        }
+        headerAdapter.registerAdapterDataObserver(
+            object : RecyclerView.AdapterDataObserver() {
+                override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
+                    selectedCategory = positionStart
+                    header.removeCallbacks(keepSelectedCategoryVisible)
+                    header.post(keepSelectedCategoryVisible)
+                }
+            },
+        )
         body.addOnChildAttachStateChangeListener(
             object : RecyclerView.OnChildAttachStateChangeListener {
                 override fun onChildViewAttachedToWindow(view: View) = compact(view)
@@ -292,6 +321,7 @@ private fun normalizeSearchText(value: String): String = Normalizer.normalize(va
 private const val EMOJI_COLUMNS = 8
 private const val EMOJI_VIEW_CLASS = "androidx.emoji2.emojipicker.EmojiView"
 private const val NATIVE_EMOJI_SCALE = 0.78f
+private const val CATEGORY_TITLE_SIZE_SP = 12f
 private val SEARCH_EMOJI_SIZE = 24.sp
 private const val ZERO_WIDTH_JOINER = 0x200D
 private const val VARIATION_SELECTOR = 0xFE0F
