@@ -187,7 +187,7 @@ private fun MessageComposer(
         ) {
             Row(
                 Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 2.dp),
-                verticalAlignment = Alignment.Bottom,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
                     onClick = onGallery,
