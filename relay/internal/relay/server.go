@@ -47,6 +47,7 @@ func NewServer(store *Store, bootstrapToken string, notifier Notifier, logger *s
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
 	mux.HandleFunc("POST /v1/mailboxes", server.createMailbox)
+	mux.HandleFunc("POST /v1/mailboxes/{mailbox}/partner-replacement", server.preparePartnerReplacement)
 	mux.HandleFunc("PUT /v1/rendezvous/{id}", server.putRendezvous)
 	mux.HandleFunc("GET /v1/rendezvous/{id}", server.getRendezvous)
 	mux.HandleFunc("DELETE /v1/rendezvous/{id}", server.deleteRendezvous)
@@ -70,6 +71,24 @@ func (s *Server) createMailbox(w http.ResponseWriter, request *http.Request) {
 		bearerToken(request),
 		s.bootstrapToken,
 	)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, credentials)
+}
+
+func (s *Server) preparePartnerReplacement(w http.ResponseWriter, request *http.Request) {
+	mailbox := request.PathValue("mailbox")
+	if !opaqueID.MatchString(mailbox) {
+		s.respondError(w, ErrNotFound)
+		return
+	}
+	if err := s.store.AuthorizeMailbox(request.Context(), mailbox, bearerToken(request), false); err != nil {
+		s.respondError(w, err)
+		return
+	}
+	credentials, err := s.store.PreparePartnerReplacement(request.Context(), mailbox)
 	if err != nil {
 		s.respondError(w, err)
 		return

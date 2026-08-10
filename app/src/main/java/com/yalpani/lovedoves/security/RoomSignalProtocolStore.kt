@@ -43,6 +43,8 @@ internal class RoomSignalProtocolStore private constructor(
 
     override fun getLocalRegistrationId(): Int = registrationId
 
+    fun localIdentityKey(): ByteArray = localIdentity.publicKey.serialize()
+
     override fun saveIdentity(
         address: SignalProtocolAddress,
         identityKey: IdentityKey,

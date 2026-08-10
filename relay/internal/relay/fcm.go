@@ -43,8 +43,8 @@ func NewFCMNotifier(projectID, credentialsPath string) (*FCMNotifier, error) {
 func (n *FCMNotifier) Notify(ctx context.Context, deviceToken string) error {
 	payload := map[string]any{
 		"message": map[string]any{
-			"token": deviceToken,
-			"data":  map[string]string{"wake": "1"},
+			"fid":  deviceToken,
+			"data": map[string]string{"wake": "1"},
 			"android": map[string]string{
 				"priority": "HIGH",
 			},

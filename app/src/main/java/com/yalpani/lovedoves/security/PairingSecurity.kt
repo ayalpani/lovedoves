@@ -1,6 +1,7 @@
 package com.yalpani.lovedoves.security
 
 import com.yalpani.lovedoves.protocol.v1.InviteV1
+import com.yalpani.lovedoves.protocol.v1.PairingReferenceV1
 import java.security.MessageDigest
 import java.util.Base64
 
@@ -8,28 +9,44 @@ internal object PairingPayloadCodec {
     private const val QR_PREFIX = "lovedoves://pair/v1/"
     private const val REMOTE_PREFIX = "https://lovedoves.yalpani.com/i#"
 
-    fun qr(invite: InviteV1): String = QR_PREFIX + encode(invite.toByteArray())
+    fun qr(invite: InviteV1): String = QR_PREFIX + encode(reference(invite).toByteArray())
 
-    fun remoteLink(invite: InviteV1): String = REMOTE_PREFIX + encode(invite.toByteArray())
+    fun remoteLink(invite: InviteV1): String = REMOTE_PREFIX + encode(reference(invite).toByteArray())
 
-    fun decodeInvite(payload: String, nowEpochMillis: Long = System.currentTimeMillis()): InviteV1 {
+    fun responseReference(responseId: String): String = "lovedoves://response/v1/$responseId"
+
+    fun isRemote(payload: String): Boolean = payload.startsWith(REMOTE_PREFIX)
+
+    fun decodeReference(
+        payload: String,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ): PairingReferenceV1 {
         val encoded = when {
             payload.startsWith(QR_PREFIX) -> payload.removePrefix(QR_PREFIX)
             payload.startsWith(REMOTE_PREFIX) -> payload.removePrefix(REMOTE_PREFIX)
             else -> error("Unknown Love Doves invitation")
         }
-        val invite = InviteV1.parseFrom(decode(encoded))
-        require(invite.version == 1) { "Unsupported invitation version" }
-        require(invite.inviteId.isNotBlank()) { "Invitation id is missing" }
-        require(invite.nonce.size() == NONCE_BYTES) { "Invalid invitation nonce" }
-        require(invite.rendezvousSecret.size() == CAPABILITY_BYTES) {
-            "Invalid rendezvous capability"
-        }
-        require(invite.expiresAtEpochMs in nowEpochMillis..(nowEpochMillis + MAX_INVITE_AGE_MS)) {
+        val reference = PairingReferenceV1.parseFrom(decode(encoded))
+        require(reference.version == 1) { "Unsupported invitation version" }
+        require(reference.responseId.isNotBlank()) { "Invitation id is missing" }
+        require(reference.inviteDeliveryId.isNotBlank()) { "Invitation delivery id is missing" }
+        require(reference.inviteDeliverySecret.size() == CAPABILITY_BYTES)
+        require(reference.inviteDeliveryCapability.size() == CAPABILITY_BYTES)
+        require(reference.expiresAtEpochMs in nowEpochMillis..(nowEpochMillis + MAX_INVITE_AGE_MS)) {
             "Invitation is expired or has an invalid lifetime"
         }
-        return invite
+        return reference
     }
+
+    private fun reference(invite: InviteV1): PairingReferenceV1 = PairingReferenceV1.newBuilder()
+        .setVersion(1)
+        .setRelayUrl(invite.mailbox.relayUrl)
+        .setResponseId(invite.inviteId)
+        .setInviteDeliveryId(invite.inviteDeliveryId)
+        .setInviteDeliverySecret(invite.inviteDeliverySecret)
+        .setInviteDeliveryCapability(invite.inviteDeliveryCapability)
+        .setExpiresAtEpochMs(invite.expiresAtEpochMs)
+        .build()
 
     private fun encode(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
@@ -37,7 +54,6 @@ internal object PairingPayloadCodec {
     private fun decode(value: String): ByteArray =
         Base64.getUrlDecoder().decode(value)
 
-    private const val NONCE_BYTES = 32
     private const val CAPABILITY_BYTES = 32
     private const val MAX_INVITE_AGE_MS = 10 * 60 * 1_000L
 }

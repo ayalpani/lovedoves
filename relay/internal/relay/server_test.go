@@ -89,6 +89,66 @@ func TestCapabilitiesRejectWrongRole(t *testing.T) {
 	}
 }
 
+func TestPartnerReplacementRevokesOldMailboxAndWriteCapability(t *testing.T) {
+	server, _ := testServer(t)
+	first := createMailbox(t, server, "bootstrap-secret", http.StatusCreated)
+	second := createMailbox(t, server, first.PartnerEnrollmentToken, http.StatusCreated)
+
+	request := authenticatedRequest(
+		http.MethodPost,
+		"/v1/mailboxes/"+first.ID+"/partner-replacement",
+		first.ReadCapability,
+		nil,
+	)
+	response := serve(server, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("replacement status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var replacement PartnerReplacementCredentials
+	if err := json.Unmarshal(response.Body.Bytes(), &replacement); err != nil {
+		t.Fatal(err)
+	}
+	if replacement.PartnerEnrollmentToken == "" || replacement.OwnWriteCapability == "" {
+		t.Fatalf("missing replacement credentials: %+v", replacement)
+	}
+
+	request = authenticatedRequest(
+		http.MethodGet,
+		"/v1/mailboxes/"+second.ID+"/objects",
+		second.ReadCapability,
+		nil,
+	)
+	if response = serve(server, request); response.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked mailbox status = %d", response.Code)
+	}
+
+	objectID := "replacement-000000001"
+	request = authenticatedRequest(
+		http.MethodPut,
+		"/v1/mailboxes/"+first.ID+"/objects/"+objectID,
+		first.WriteCapability,
+		bytes.NewReader([]byte("old writer")),
+	)
+	if response = serve(server, request); response.Code != http.StatusUnauthorized {
+		t.Fatalf("old write capability status = %d", response.Code)
+	}
+
+	third := createMailbox(t, server, replacement.PartnerEnrollmentToken, http.StatusCreated)
+	request = authenticatedRequest(
+		http.MethodPut,
+		"/v1/mailboxes/"+first.ID+"/objects/"+objectID,
+		replacement.OwnWriteCapability,
+		bytes.NewReader([]byte("new writer")),
+	)
+	if response = serve(server, request); response.Code != http.StatusCreated {
+		t.Fatalf("rotated write capability status = %d", response.Code)
+	}
+	if third.ID == second.ID {
+		t.Fatal("replacement mailbox reused the revoked identifier")
+	}
+	createMailbox(t, server, replacement.PartnerEnrollmentToken, http.StatusInsufficientStorage)
+}
+
 func TestRendezvousLifecycle(t *testing.T) {
 	server, _ := testServer(t)
 	id := "rendezvous-0000000001"

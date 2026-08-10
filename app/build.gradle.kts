@@ -1,3 +1,6 @@
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +8,13 @@ plugins {
     id("com.google.devtools.ksp")
     id("com.google.protobuf")
 }
+
+val loveDovesProperties = Properties().apply {
+    val file = rootProject.file("lovedoves.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+
+fun quoted(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
     namespace = "com.yalpani.lovedoves"
@@ -17,11 +27,46 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+        buildConfigField(
+            "String",
+            "RELAY_BOOTSTRAP_TOKEN",
+            quoted(loveDovesProperties.getProperty("relay.bootstrapToken", "")),
+        )
+        buildConfigField("String", "FIREBASE_APP_ID", quoted(loveDovesProperties.getProperty("firebase.appId", "")))
+        buildConfigField("String", "FIREBASE_API_KEY", quoted(loveDovesProperties.getProperty("firebase.apiKey", "")))
+        buildConfigField("String", "FIREBASE_PROJECT_ID", quoted(loveDovesProperties.getProperty("firebase.projectId", "")))
+        buildConfigField("String", "FIREBASE_SENDER_ID", quoted(loveDovesProperties.getProperty("firebase.senderId", "")))
+    }
+
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "RELAY_URL", quoted("http://127.0.0.1:8787"))
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
+        getByName("release") {
+            buildConfigField("String", "RELAY_BOOTSTRAP_TOKEN", quoted(""))
+            buildConfigField("String", "RELAY_URL", quoted("https://lovedoves.yalpani.com"))
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
     }
 
     buildFeatures {
         buildConfig = true
         compose = true
+    }
+
+    packaging {
+        jniLibs.excludes += "**/libsignal_jni_testing.so"
+        resources.excludes += setOf("**/*.dylib", "**/*.dll")
     }
 
     compileOptions {
@@ -30,8 +75,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -52,11 +100,14 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-process:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.room:room-ktx:2.8.4")
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("com.google.firebase:firebase-messaging:25.1.1")
+    implementation("com.google.firebase:firebase-installations:19.1.2")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.protobuf:protobuf-javalite:4.35.1")
     implementation("com.google.zxing:core:3.5.4")

@@ -34,6 +34,11 @@ type MailboxCredentials struct {
 	PartnerEnrollmentToken string `json:"partner_enrollment_token,omitempty"`
 }
 
+type PartnerReplacementCredentials struct {
+	PartnerEnrollmentToken string `json:"partner_enrollment_token"`
+	OwnWriteCapability     string `json:"own_write_capability"`
+}
+
 type ObjectMetadata struct {
 	ID           string `json:"object_id"`
 	Size         int64  `json:"size"`
@@ -215,6 +220,98 @@ func (s *Store) AuthorizeMailbox(ctx context.Context, mailboxID, token string, w
 		return ErrUnauthorized
 	}
 	return err
+}
+
+// PreparePartnerReplacement removes the other mailbox, rotates the surviving
+// mailbox's write capability, and issues a one-use enrollment capability. The
+// caller has already authenticated with the surviving mailbox's read
+// capability. This is the only server-side state transition needed for
+// partner-assisted recovery; the relay still learns no device identity.
+func (s *Store) PreparePartnerReplacement(
+	ctx context.Context,
+	survivingMailboxID string,
+) (PartnerReplacementCredentials, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	enrollment, err := randomToken(32)
+	if err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	writeCapability, err := randomToken(32)
+	if err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT objects.relative_path, objects.mailbox_id
+		 FROM objects JOIN mailboxes ON mailboxes.id = objects.mailbox_id
+		 WHERE mailboxes.id <> ?`,
+		survivingMailboxID,
+	)
+	if err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	var paths, removedMailboxes []string
+	for rows.Next() {
+		var path, mailboxID string
+		if err := rows.Scan(&path, &mailboxID); err != nil {
+			rows.Close()
+			return PartnerReplacementCredentials{}, err
+		}
+		paths = append(paths, path)
+		removedMailboxes = append(removedMailboxes, mailboxID)
+	}
+	if err := rows.Close(); err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(
+		ctx,
+		"UPDATE mailboxes SET write_hash = ? WHERE id = ?",
+		hashCapability(writeCapability),
+		survivingMailboxID,
+	)
+	if err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return PartnerReplacementCredentials{}, ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM mailboxes WHERE id <> ?", survivingMailboxID); err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		"INSERT OR REPLACE INTO metadata(key, value) VALUES('partner_enrollment_hash', ?)",
+		hashCapability(enrollment),
+	); err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
+	for _, path := range paths {
+		_ = os.Remove(filepath.Join(s.root, path))
+	}
+	seen := make(map[string]struct{})
+	for _, mailboxID := range removedMailboxes {
+		if _, exists := seen[mailboxID]; exists {
+			continue
+		}
+		seen[mailboxID] = struct{}{}
+		_ = os.Remove(filepath.Join(s.root, "objects", mailboxID))
+	}
+	return PartnerReplacementCredentials{
+		PartnerEnrollmentToken: enrollment,
+		OwnWriteCapability:     writeCapability,
+	}, nil
 }
 
 func (s *Store) PutObject(ctx context.Context, mailboxID, objectID string, body io.Reader, maxObjectBytes, maxMailboxBytes int64) (bool, error) {

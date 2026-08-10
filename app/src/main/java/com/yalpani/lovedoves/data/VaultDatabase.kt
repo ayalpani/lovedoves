@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
@@ -33,6 +35,23 @@ internal data class PairStateEntity(
     val partnerWriteCapability: ByteArray,
     val safetyWords: String,
     val pairedAtEpochMillis: Long,
+    val partnerIdentityKey: ByteArray,
+)
+
+@Entity(tableName = "pending_pairing")
+internal data class PendingPairingEntity(
+    @PrimaryKey val id: Int = 1,
+    val role: String,
+    val mode: String,
+    val invite: ByteArray,
+    val response: ByteArray?,
+    val ownMailboxId: String,
+    val ownReadCapability: ByteArray,
+    val safetyWords: String?,
+    val localConfirmed: Boolean,
+    val remoteConfirmed: Boolean,
+    val recovery: Boolean,
+    val recoveryOldIdentityKey: ByteArray?,
 )
 
 @Entity(tableName = "conversation_events")
@@ -75,6 +94,12 @@ internal data class SignalRecordEntity(
     val payload: ByteArray,
 )
 
+@Entity(tableName = "processed_objects")
+internal data class ProcessedObjectEntity(
+    @PrimaryKey val objectId: String,
+    val processedAtEpochMillis: Long,
+)
+
 @Dao
 internal interface ProfileDao {
     @Query("SELECT * FROM local_profile WHERE id = 1")
@@ -93,6 +118,18 @@ internal interface PairStateDao {
     fun put(pairState: PairStateEntity)
 
     @Query("DELETE FROM pair_state")
+    fun delete()
+}
+
+@Dao
+internal interface PendingPairingDao {
+    @Query("SELECT * FROM pending_pairing WHERE id = 1")
+    fun get(): PendingPairingEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun put(pending: PendingPairingEntity)
+
+    @Query("DELETE FROM pending_pairing")
     fun delete()
 }
 
@@ -134,6 +171,9 @@ internal interface MediaDao {
 
 @Dao
 internal interface OutboxDao {
+    @Query("SELECT * FROM outbox WHERE objectId = :objectId")
+    fun get(objectId: String): OutboxEntity?
+
     @Query("SELECT * FROM outbox WHERE nextAttemptAtEpochMillis <= :now ORDER BY nextAttemptAtEpochMillis")
     fun ready(now: Long): List<OutboxEntity>
 
@@ -168,25 +208,41 @@ internal interface SignalRecordDao {
     fun deleteAll()
 }
 
+@Dao
+internal interface ProcessedObjectDao {
+    @Query("SELECT EXISTS(SELECT 1 FROM processed_objects WHERE objectId = :objectId)")
+    fun contains(objectId: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insert(processed: ProcessedObjectEntity): Long
+
+    @Query("DELETE FROM processed_objects")
+    fun deleteAll()
+}
+
 @Database(
     entities = [
         LocalProfileEntity::class,
         PairStateEntity::class,
+        PendingPairingEntity::class,
         ConversationEventEntity::class,
         MediaEntity::class,
         OutboxEntity::class,
         SignalRecordEntity::class,
+        ProcessedObjectEntity::class,
     ],
-    version = 1,
+    version = 4,
     exportSchema = true,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     abstract fun profileDao(): ProfileDao
     abstract fun pairStateDao(): PairStateDao
+    abstract fun pendingPairingDao(): PendingPairingDao
     abstract fun conversationDao(): ConversationDao
     abstract fun mediaDao(): MediaDao
     abstract fun outboxDao(): OutboxDao
     abstract fun signalRecordDao(): SignalRecordDao
+    abstract fun processedObjectDao(): ProcessedObjectDao
 
     companion object {
         fun open(context: Context, passphrase: ByteArray): VaultDatabase {
@@ -198,7 +254,58 @@ internal abstract class VaultDatabase : RoomDatabase() {
                 "love-doves-vault.db",
             )
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE pair_state ADD COLUMN partnerIdentityKey BLOB NOT NULL DEFAULT X''",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_pairing (
+                        id INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        mode TEXT NOT NULL,
+                        invite BLOB NOT NULL,
+                        response BLOB,
+                        ownMailboxId TEXT NOT NULL,
+                        ownReadCapability BLOB NOT NULL,
+                        safetyWords TEXT,
+                        localConfirmed INTEGER NOT NULL,
+                        remoteConfirmed INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS processed_objects (
+                        objectId TEXT NOT NULL,
+                        processedAtEpochMillis INTEGER NOT NULL,
+                        PRIMARY KEY(objectId)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE pending_pairing ADD COLUMN recovery INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE pending_pairing ADD COLUMN recoveryOldIdentityKey BLOB",
+                )
+            }
         }
     }
 }

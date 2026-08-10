@@ -26,7 +26,7 @@ internal class EncryptedMediaStore private constructor(private val directory: Fi
     )
 
     fun encrypt(plaintext: ByteArray): EncryptedMedia {
-        require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Photo exceeds 20 MiB" }
+        require(plaintext.size <= MAX_PLAINTEXT_BYTES) { "Photo exceeds encrypted relay limit" }
         val id = UUID.randomUUID().toString()
         val key = ByteArray(KEY_BYTES).also(SecureRandom()::nextBytes)
         val nonce = ByteArray(NONCE_BYTES).also(SecureRandom()::nextBytes)
@@ -88,8 +88,17 @@ internal class EncryptedMediaStore private constructor(private val directory: Fi
         val target = resolve(relativePath)
         val partial = File(directory, "$id.part")
         directory.mkdirs()
+        if (target.isFile) {
+            require(MessageDigest.isEqual(expectedHash, sha256(target.readBytes()))) {
+                "Conflicting encrypted photo"
+            }
+            return relativePath
+        }
         try {
-            partial.writeBytes(bytes)
+            partial.outputStream().use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
             check(partial.renameTo(target)) { "Could not commit downloaded photo" }
         } finally {
             partial.delete()
@@ -127,7 +136,8 @@ internal class EncryptedMediaStore private constructor(private val directory: Fi
         private const val NONCE_BYTES = 12
         private const val GCM_TAG_BITS = 128
         private const val GCM_TAG_BYTES = 16
-        const val MAX_PLAINTEXT_BYTES = 20 * 1024 * 1024
-        private const val MAX_CIPHERTEXT_BYTES = MAX_PLAINTEXT_BYTES + 64
+        const val MAX_CIPHERTEXT_BYTES = 20 * 1024 * 1024
+        const val MAX_PLAINTEXT_BYTES =
+            MAX_CIPHERTEXT_BYTES - 4 - NONCE_BYTES - GCM_TAG_BYTES
     }
 }

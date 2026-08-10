@@ -35,6 +35,22 @@ message InviteV1 {
   PublicPreKeyBundleV1 pre_key_bundle = 6;
   MailboxWriteV1 mailbox = 7;
   bytes rendezvous_secret = 8;
+  bytes rendezvous_capability = 9;
+  bytes relay_enrollment_capability = 10;
+  string invite_delivery_id = 11;
+  bytes invite_delivery_secret = 12;
+  bytes invite_delivery_capability = 13;
+  bool recovery = 14;
+}
+
+message PairingReferenceV1 {
+  uint32 version = 1;
+  string relay_url = 2;
+  string response_id = 3;
+  string invite_delivery_id = 4;
+  bytes invite_delivery_secret = 5;
+  bytes invite_delivery_capability = 6;
+  int64 expires_at_epoch_ms = 7;
 }
 
 message PairResponseV1 {
@@ -108,6 +124,12 @@ message RecoveryBatchV1 {
   uint32 batch_index = 2;
   bool final_batch = 3;
   repeated ConversationEventV1 events = 4;
+  repeated RecoveryRecordV1 records = 5;
+}
+
+message RecoveryRecordV1 {
+  ConversationEventV1 event = 1;
+  bool outgoing_on_recovering_device = 2;
 }
 
 message DeviceRevocationV1 {
