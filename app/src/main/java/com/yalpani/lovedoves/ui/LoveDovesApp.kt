@@ -8,6 +8,13 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
@@ -30,16 +37,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yalpani.lovedoves.VaultSession
+import com.yalpani.lovedoves.data.PairStateEntity
 import com.yalpani.lovedoves.domain.AppContentState
 import com.yalpani.lovedoves.domain.LoveDovesController
 import kotlinx.coroutines.launch
 
+private const val PanelMotionDurationMillis = 400
+private const val PanelFadeDurationMillis = 200
+
 private sealed interface Overlay {
     data object Scanner : Overlay
     data object Camera : Overlay
-    data object Settings : Overlay
+    data class Settings(val pair: PairStateEntity) : Overlay
     data class Photo(val mediaId: String) : Overlay
 }
+
+private enum class ContentRoute { LOADING, PROFILE, PAIRING_HOME, PAIRING, CONVERSATION }
+
+private val AppContentState.route: ContentRoute
+    get() = when (this) {
+        AppContentState.Loading -> ContentRoute.LOADING
+        AppContentState.ProfileSetup -> ContentRoute.PROFILE
+        AppContentState.PairingHome -> ContentRoute.PAIRING_HOME
+        is AppContentState.Pairing -> ContentRoute.PAIRING
+        is AppContentState.Conversation -> ContentRoute.CONVERSATION
+    }
 
 @Composable
 internal fun LoveDovesApp(
@@ -104,47 +126,55 @@ internal fun LoveDovesApp(
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        when (val state = content) {
-            AppContentState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            AppContentState.ProfileSetup -> ProfileSetupScreen(busy, controller::saveProfile)
-            AppContentState.PairingHome -> PairingHomeScreen(
-                busy = busy,
-                onCreate = controller::createInvitation,
-                onScan = { overlay = Overlay.Scanner },
-                onPaste = controller::acceptPayload,
-            )
-            is AppContentState.Pairing -> PairingPendingScreen(
-                snapshot = state.snapshot,
-                busy = busy,
-                onScanResponse = { overlay = Overlay.Scanner },
-                onFetchResponse = controller::fetchRemoteResponse,
-                onShare = { shareText(context, it) },
-                onConfirm = { onAuthenticate(controller::confirmPairing) },
-                onSync = controller::sync,
-                onCancel = controller::cancelPairing,
-            )
-            is AppContentState.Conversation -> {
-                if (overlay == Overlay.Settings) {
-                    SettingsScreen(
-                        pair = state.pair,
+        Box(Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = content,
+                contentKey = { it.route },
+                transitionSpec = {
+                    if (
+                        initialState.route == ContentRoute.LOADING ||
+                        targetState.route == ContentRoute.LOADING
+                    ) {
+                        fadeIn(tween(PanelFadeDurationMillis)) togetherWith
+                            fadeOut(tween(PanelFadeDurationMillis))
+                    } else {
+                        val forward = targetState.route.ordinal > initialState.route.ordinal
+                        val enter = slideInHorizontally(tween(PanelMotionDurationMillis)) {
+                            if (forward) it else -it
+                        } + fadeIn(tween(PanelFadeDurationMillis))
+                        val exit = slideOutHorizontally(tween(PanelMotionDurationMillis)) {
+                            if (forward) -it else it
+                        } + fadeOut(tween(PanelFadeDurationMillis))
+                        enter togetherWith exit
+                    }
+                },
+                label = "content panel",
+            ) { state ->
+                when (state) {
+                    AppContentState.Loading -> Box(
+                        Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                    AppContentState.ProfileSetup -> ProfileSetupScreen(busy, controller::saveProfile)
+                    AppContentState.PairingHome -> PairingHomeScreen(
                         busy = busy,
-                        onBack = { overlay = null },
-                        onRecovery = { mode ->
-                            onAuthenticate {
-                                overlay = null
-                                controller.createRecoveryInvitation(mode)
-                            }
-                        },
-                        onDelete = {
-                            onAuthenticate {
-                                controller.prepareDelete { onDeleteAll() }
-                            }
-                        },
+                        onCreate = controller::createInvitation,
+                        onScan = { overlay = Overlay.Scanner },
+                        onPaste = controller::acceptPayload,
                     )
-                } else {
-                    ConversationScreen(
+                    is AppContentState.Pairing -> PairingPendingScreen(
+                        snapshot = state.snapshot,
+                        busy = busy,
+                        onScanResponse = { overlay = Overlay.Scanner },
+                        onFetchResponse = controller::fetchRemoteResponse,
+                        onShare = { shareText(context, it) },
+                        onConfirm = { onAuthenticate(controller::confirmPairing) },
+                        onSync = controller::sync,
+                        onCancel = controller::cancelPairing,
+                    )
+                    is AppContentState.Conversation -> ConversationScreen(
                         pair = state.pair,
                         messages = state.messages,
                         controller = controller,
@@ -152,43 +182,92 @@ internal fun LoveDovesApp(
                         onSend = controller::sendText,
                         onCamera = { overlay = Overlay.Camera },
                         onGallery = onPickPhoto,
-                        onSettings = { overlay = Overlay.Settings },
+                        onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
                         onPhoto = { overlay = Overlay.Photo(it) },
                     )
                 }
             }
-        }
-    }
 
-    when (val destination = overlay) {
-        Overlay.Scanner -> CameraPermissionGate(onSystemPermissionPrompt) {
-            QrScannerScreen(
-                onBack = { overlay = null },
-                onScanned = {
-                    overlay = null
-                    controller.acceptPayload(it)
-                },
-            )
-        }
-        Overlay.Camera -> CameraPermissionGate(onSystemPermissionPrompt) {
-            PhotoCameraScreen(
-                onBack = { overlay = null },
-                onUsePhoto = { jpeg ->
-                    overlay = null
-                    scope.launch {
-                        photoBusy = true
-                        runCatching { PhotoProcessor.fromCamera(jpeg) }
-                            .onSuccess(controller::sendPhoto)
-                            .onFailure { localError = it.message ?: "Das Foto konnte nicht verarbeitet werden." }
-                        photoBusy = false
+            AnimatedContent(
+                targetState = overlay,
+                contentKey = {
+                    when (it) {
+                        Overlay.Camera -> "camera"
+                        Overlay.Scanner -> "scanner"
+                        is Overlay.Settings -> "settings"
+                        is Overlay.Photo -> "photo"
+                        null -> "none"
                     }
                 },
-            )
+                transitionSpec = {
+                    if (targetState != null) {
+                        val enter = slideInHorizontally(tween(PanelMotionDurationMillis)) { it } +
+                            fadeIn(tween(PanelFadeDurationMillis))
+                        enter togetherWith fadeOut(tween(PanelFadeDurationMillis))
+                    } else {
+                        val exit = slideOutHorizontally(tween(PanelMotionDurationMillis)) { it } +
+                            fadeOut(tween(PanelFadeDurationMillis))
+                        fadeIn(tween(PanelFadeDurationMillis)) togetherWith exit
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "overlay panel",
+            ) { destination ->
+                Box(Modifier.fillMaxSize()) {
+                    when (destination) {
+                        Overlay.Scanner -> CameraPermissionGate(onSystemPermissionPrompt) {
+                            QrScannerScreen(
+                                onBack = { overlay = null },
+                                onScanned = {
+                                    overlay = null
+                                    controller.acceptPayload(it)
+                                },
+                            )
+                        }
+                        Overlay.Camera -> CameraPermissionGate(onSystemPermissionPrompt) {
+                            PhotoCameraScreen(
+                                onBack = { overlay = null },
+                                onUsePhoto = { jpeg ->
+                                    overlay = null
+                                    scope.launch {
+                                        photoBusy = true
+                                        runCatching { PhotoProcessor.fromCamera(jpeg) }
+                                            .onSuccess(controller::sendPhoto)
+                                            .onFailure {
+                                                localError = it.message ?:
+                                                    "Das Foto konnte nicht verarbeitet werden."
+                                            }
+                                        photoBusy = false
+                                    }
+                                },
+                            )
+                        }
+                        is Overlay.Settings -> SettingsScreen(
+                            pair = destination.pair,
+                            busy = busy,
+                            onBack = { overlay = null },
+                            onRecovery = { mode ->
+                                onAuthenticate {
+                                    overlay = null
+                                    controller.createRecoveryInvitation(mode)
+                                }
+                            },
+                            onDelete = {
+                                onAuthenticate {
+                                    controller.prepareDelete { onDeleteAll() }
+                                }
+                            },
+                        )
+                        is Overlay.Photo -> PhotoDetailScreen(
+                            destination.mediaId,
+                            controller,
+                        ) { overlay = null }
+                        null -> Unit
+                    }
+                }
+            }
         }
-        Overlay.Settings -> Unit
-        is Overlay.Photo -> PhotoDetailScreen(destination.mediaId, controller) { overlay = null }
-        null -> Unit
     }
 
     val error = localError ?: controllerError

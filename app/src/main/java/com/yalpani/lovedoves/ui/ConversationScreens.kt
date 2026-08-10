@@ -3,6 +3,7 @@ package com.yalpani.lovedoves.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,11 +26,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +83,7 @@ internal fun ConversationScreen(
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
-    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -141,30 +144,99 @@ internal fun ConversationScreen(
                 }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        MessageComposer(
+            text = text,
+            busy = busy,
+            onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
+            onCamera = onCamera,
+            onGallery = onGallery,
+            onSend = {
+                val message = text
+                text = ""
+                onSend(message)
+            },
+        )
+    }
+}
+
+@Composable
+private fun MessageComposer(
+    text: String,
+    busy: Boolean,
+    onTextChange: (String) -> Unit,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+    onSend: () -> Unit,
+) {
+    val canSend = text.isNotBlank() && !busy
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(LovePaper)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(24.dp),
+            color = Color.White,
+            border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
         ) {
-            IconButton(onClick = onCamera, enabled = !busy) { CameraIcon("Foto aufnehmen") }
-            IconButton(onClick = onGallery, enabled = !busy) { ImageIcon("Foto auswählen") }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
-                placeholder = { Text("Etwas nur für euch …") },
-                modifier = Modifier.weight(1f),
-                maxLines = 5,
-                shape = RoundedCornerShape(24.dp),
+            Row(
+                Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                IconButton(
+                    onClick = onGallery,
+                    enabled = !busy,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    ImageIcon("Foto auswählen", modifier = Modifier.size(20.dp))
+                }
+                BasicTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp, vertical = 12.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
+                    cursorBrush = SolidColor(LoveInk),
+                    maxLines = 5,
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (text.isEmpty()) {
+                                Text(
+                                    "Etwas nur für euch …",
+                                    color = LoveInk.copy(alpha = 0.5f),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                )
+                IconButton(
+                    onClick = onCamera,
+                    enabled = !busy,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    CameraIcon("Foto aufnehmen", modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+        IconButton(
+            onClick = onSend,
+            enabled = canSend,
+            modifier = Modifier
+                .size(48.dp)
+                .background(if (canSend) LoveInk else LoveMist, CircleShape),
+        ) {
+            SendIcon(
+                "Nachricht senden",
+                modifier = Modifier.size(20.dp),
+                color = if (canSend) Color.White else LoveInk.copy(alpha = 0.35f),
             )
-            IconButton(
-                onClick = {
-                    val message = text
-                    text = ""
-                    onSend(message)
-                },
-                enabled = text.isNotBlank() && !busy,
-                modifier = Modifier.background(MaterialTheme.colorScheme.primary, CircleShape),
-            ) { SendIcon("Nachricht senden", color = Color.White) }
         }
     }
 }

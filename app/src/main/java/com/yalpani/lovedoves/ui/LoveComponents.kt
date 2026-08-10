@@ -166,13 +166,17 @@ internal fun CameraIcon(
 )
 
 @Composable
-internal fun ImageIcon(description: String? = null) = LoveIcon(
+internal fun ImageIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
     listOf(
         "M5 3H19A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3Z",
         "M11 9A2 2 0 0 1 9 11 2 2 0 0 1 7 9 2 2 0 0 1 11 9Z",
         "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
     ),
     description,
+    modifier,
 )
 
 @Composable
