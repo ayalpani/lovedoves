@@ -32,8 +32,9 @@ als zweites Gerät. `scripts/lovedoves-dev relay` startet den lokalen Blind-Rela
 Der Relay ist kein Backup. Sind beide Geräte verloren, sind auch die Inhalte
 verloren.
 
-See `docs/architecture.md` and `docs/threat-model.md` before changing storage,
-pairing, transport, or cryptographic code.
+Die [Produktpositionierung](docs/product.md) hält Wettbewerb und MVP-Grenze
+fest. See `docs/architecture.md` and `docs/threat-model.md` before changing
+storage, pairing, transport, or cryptographic code.
 
 ## License
 
