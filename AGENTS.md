@@ -58,5 +58,11 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   policy.
 - Keep the full-screen photo view aligned with Spur's `PhotoDetail`: use Telephoto for native
   pinch zoom, double-tap zoom, and panning while keeping decrypted image data memory-only.
+- Decode chat thumbnails away from the UI thread, cap them at 1024 pixels, and cache them only
+  in RAM for the lifetime of the unlocked vault. Full-resolution decoding belongs only in the
+  full-screen photo view, and every decoded cache entry must become unreachable on lock.
+- Settings use exactly two text sizes: the page header and one shared content size. Express the
+  hierarchy among section labels, setting names, and descriptions through weight, color, and
+  spacing rather than additional font sizes.
 - When video or emoji selection enters scope, start from Spur's `VideoCameraScreen` and
   `EmojiPicker` rather than creating parallel implementations.

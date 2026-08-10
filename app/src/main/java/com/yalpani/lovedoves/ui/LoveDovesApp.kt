@@ -80,6 +80,8 @@ internal fun LoveDovesApp(
         LoveDovesController(context.applicationContext as Application, session)
     }
     DisposableEffect(controller) { onDispose(controller::close) }
+    val photoBitmaps = remember(controller) { PhotoBitmapLoader(controller) }
+    DisposableEffect(photoBitmaps) { onDispose(photoBitmaps::close) }
     val content by controller.content.collectAsStateWithLifecycle()
     val controllerBusy by controller.busy.collectAsStateWithLifecycle()
     val controllerError by controller.error.collectAsStateWithLifecycle()
@@ -177,7 +179,7 @@ internal fun LoveDovesApp(
                     is AppContentState.Conversation -> ConversationScreen(
                         pair = state.pair,
                         messages = state.messages,
-                        controller = controller,
+                        photoBitmaps = photoBitmaps,
                         busy = busy,
                         onSend = controller::sendText,
                         onCamera = { overlay = Overlay.Camera },
@@ -263,7 +265,7 @@ internal fun LoveDovesApp(
                         )
                         is Overlay.Photo -> PhotoDetailScreen(
                             destination.mediaId,
-                            controller,
+                            photoBitmaps,
                         ) { overlay = null }
                         null -> Unit
                     }

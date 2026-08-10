@@ -47,6 +47,16 @@ internal object PhotoProcessor {
             }.getOrNull()
         }
 
+    suspend fun forDisplay(jpeg: ByteArray, maxEdge: Int): Bitmap {
+        try {
+            return withContext(Dispatchers.Default) {
+                decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(jpeg)), maxEdge)
+            }
+        } finally {
+            jpeg.fill(0)
+        }
+    }
+
     private fun normalize(
         source: ImageDecoder.Source,
         leftQuarterTurns: Int = 0,

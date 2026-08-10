@@ -1,7 +1,6 @@
 package com.yalpani.lovedoves.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -51,14 +50,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.LoveMist
 import com.yalpani.lovedoves.LovePaper
 import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.data.PairStateEntity
-import com.yalpani.lovedoves.domain.LoveDovesController
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import com.yalpani.lovedoves.domain.PairingMode
 import java.time.Instant
@@ -69,7 +66,7 @@ import java.time.format.DateTimeFormatter
 internal fun ConversationScreen(
     pair: PairStateEntity,
     messages: List<ConversationEventEntity>,
-    controller: LoveDovesController,
+    photoBitmaps: PhotoBitmapLoader,
     busy: Boolean,
     onSend: (String) -> Unit,
     onCamera: () -> Unit,
@@ -140,7 +137,7 @@ internal fun ConversationScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
-                    MessageBubble(message, controller, onRetry, onPhoto)
+                    MessageBubble(message, photoBitmaps, onRetry, onPhoto)
                 }
             }
         }
@@ -244,7 +241,7 @@ private fun MessageComposer(
 @Composable
 private fun MessageBubble(
     message: ConversationEventEntity,
-    controller: LoveDovesController,
+    photoBitmaps: PhotoBitmapLoader,
     onRetry: (String) -> Unit,
     onPhoto: (String) -> Unit,
 ) {
@@ -270,7 +267,7 @@ private fun MessageBubble(
                         val mediaId = requireNotNull(message.mediaId)
                         EncryptedPhotoImage(
                             mediaId = mediaId,
-                            controller = controller,
+                            photoBitmaps = photoBitmaps,
                             contentDescription = if (message.outgoing) {
                                 "Gesendetes Foto"
                             } else {
@@ -483,7 +480,7 @@ private fun SettingsSectionHeader(label: String) {
         Text(
             label,
             color = LoveInk,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -515,7 +512,7 @@ private fun SettingsRowTitle(
         text,
         modifier = modifier,
         color = color,
-        style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
+        style = MaterialTheme.typography.bodyLarge,
         fontWeight = FontWeight.Medium,
     )
 }
@@ -581,14 +578,14 @@ private enum class RecoveryStep { CONFIRM, METHOD }
 @Composable
 internal fun PhotoDetailScreen(
     mediaId: String,
-    controller: LoveDovesController,
+    photoBitmaps: PhotoBitmapLoader,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         EncryptedPhotoImage(
             mediaId,
-            controller,
+            photoBitmaps,
             "Foto in voller Größe",
             Modifier.fillMaxSize(),
             ContentScale.Fit,
@@ -606,24 +603,23 @@ internal fun PhotoDetailScreen(
 @Composable
 private fun EncryptedPhotoImage(
     mediaId: String,
-    controller: LoveDovesController,
+    photoBitmaps: PhotoBitmapLoader,
     contentDescription: String,
     modifier: Modifier,
     contentScale: ContentScale,
     zoomable: Boolean = false,
     backgroundColor: Color = LoveMist,
 ) {
-    val bitmap by produceState<Bitmap?>(null, mediaId, controller) {
-        val bytes = controller.photoBytes(mediaId)
-        value = try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        } finally {
-            bytes.fill(0)
+    val bitmap by produceState<Bitmap?>(null, mediaId, photoBitmaps, zoomable) {
+        value = if (zoomable) {
+            photoBitmaps.fullSize(mediaId)
+        } else {
+            photoBitmaps.thumbnail(mediaId)
         }
     }
     val rendered = bitmap
-    DisposableEffect(rendered) {
-        onDispose { rendered?.recycle() }
+    DisposableEffect(rendered, zoomable) {
+        onDispose { if (zoomable) rendered?.recycle() }
     }
     Box(modifier.background(backgroundColor), contentAlignment = Alignment.Center) {
         if (rendered == null) {
