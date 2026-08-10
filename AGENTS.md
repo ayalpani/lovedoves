@@ -42,3 +42,15 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   then show only that role's next action. Never mix invite creation, QR scanning,
   link input, and the relay freischalt code on one screen.
 - Prefer Lucide icons and a small number of focused screens.
+
+## Spur reuse contract
+
+- Before designing or implementing a Love Doves interaction that already exists in Spur,
+  inspect the corresponding Spur source and port it as the baseline. Adapt only where the
+  Love Doves product or security model genuinely differs; do not independently redesign it.
+- Keep the Love Doves photo camera aligned with Spur's `CameraScreen`, `CameraChrome`, and
+  `MediaConfirmationPanel`: system-bar insets, full-sensor rotation, matching CameraX
+  preview/capture viewport, camera switching, capture controls, confirmation motion, and
+  manual photo rotation. Love Doves must retain its stricter memory-only plaintext policy.
+- When video or emoji selection enters scope, start from Spur's `VideoCameraScreen` and
+  `EmojiPicker` rather than creating parallel implementations.

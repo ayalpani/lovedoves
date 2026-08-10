@@ -228,11 +228,13 @@ internal fun LoveDovesApp(
                         Overlay.Camera -> CameraPermissionGate(onSystemPermissionPrompt) {
                             PhotoCameraScreen(
                                 onBack = { overlay = null },
-                                onUsePhoto = { jpeg ->
+                                onUsePhoto = { jpeg, leftQuarterTurns ->
                                     overlay = null
                                     scope.launch {
                                         photoBusy = true
-                                        runCatching { PhotoProcessor.fromCamera(jpeg) }
+                                        runCatching {
+                                            PhotoProcessor.fromCamera(jpeg, leftQuarterTurns)
+                                        }
                                             .onSuccess(controller::sendPhoto)
                                             .onFailure {
                                                 localError = it.message ?:

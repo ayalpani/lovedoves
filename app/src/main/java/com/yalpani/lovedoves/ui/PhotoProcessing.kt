@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.net.Uri
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import com.yalpani.lovedoves.domain.PreparedPhoto
@@ -19,39 +20,49 @@ internal object PhotoProcessor {
             normalize(ImageDecoder.createSource(contentResolver, uri))
         }
 
-    suspend fun fromCamera(jpeg: ByteArray): PreparedPhoto = withContext(Dispatchers.Default) {
+    suspend fun fromCamera(
+        jpeg: ByteArray,
+        leftQuarterTurns: Int,
+    ): PreparedPhoto {
         try {
-            normalize(ImageDecoder.createSource(ByteBuffer.wrap(jpeg)))
+            return withContext(Dispatchers.Default) {
+                normalize(
+                    source = ImageDecoder.createSource(ByteBuffer.wrap(jpeg)),
+                    leftQuarterTurns = leftQuarterTurns,
+                )
+            }
         } finally {
             jpeg.fill(0)
         }
     }
 
-    private fun normalize(source: ImageDecoder.Source): PreparedPhoto {
-        val decoded = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            decoder.isMutableRequired = false
-            val width = info.size.width.coerceAtLeast(1)
-            val height = info.size.height.coerceAtLeast(1)
-            val longest = maxOf(width, height)
-            if (longest > MAX_EDGE) {
-                val scale = MAX_EDGE.toFloat() / longest
-                decoder.setTargetSize(
-                    (width * scale).toInt().coerceAtLeast(1),
-                    (height * scale).toInt().coerceAtLeast(1),
+    suspend fun previewFromCamera(jpeg: ByteArray, leftQuarterTurns: Int): Bitmap? =
+        withContext(Dispatchers.Default) {
+            runCatching {
+                val decoded = decodeBitmap(
+                    source = ImageDecoder.createSource(ByteBuffer.wrap(jpeg)),
+                    maxEdge = PREVIEW_MAX_EDGE,
                 )
-            }
+                rotateLeft(decoded, leftQuarterTurns)
+            }.getOrNull()
         }
-        val bitmap = if (decoded.hasAlpha()) {
-            Bitmap.createBitmap(decoded.width, decoded.height, Bitmap.Config.ARGB_8888).also {
+
+    private fun normalize(
+        source: ImageDecoder.Source,
+        leftQuarterTurns: Int = 0,
+    ): PreparedPhoto {
+        val decoded = decodeBitmap(source, MAX_EDGE)
+        val rotated = rotateLeft(decoded, leftQuarterTurns)
+        val bitmap = if (rotated.hasAlpha()) {
+            Bitmap.createBitmap(rotated.width, rotated.height, Bitmap.Config.ARGB_8888).also {
                 Canvas(it).run {
                     drawColor(Color.rgb(255, 249, 247))
-                    drawBitmap(decoded, 0f, 0f, null)
+                    drawBitmap(rotated, 0f, 0f, null)
                 }
-                decoded.recycle()
+                rotated.recycle()
             }
         } else {
-            decoded
+            rotated
         }
         try {
             for (quality in listOf(90, 85, 80)) {
@@ -69,5 +80,43 @@ internal object PhotoProcessor {
         }
     }
 
+    private fun decodeBitmap(source: ImageDecoder.Source, maxEdge: Int): Bitmap =
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.isMutableRequired = false
+            val width = info.size.width.coerceAtLeast(1)
+            val height = info.size.height.coerceAtLeast(1)
+            val longest = maxOf(width, height)
+            if (longest > maxEdge) {
+                val scale = maxEdge.toFloat() / longest
+                decoder.setTargetSize(
+                    (width * scale).toInt().coerceAtLeast(1),
+                    (height * scale).toInt().coerceAtLeast(1),
+                )
+            }
+        }
+
+    private fun rotateLeft(source: Bitmap, leftQuarterTurns: Int): Bitmap {
+        val turns = Math.floorMod(leftQuarterTurns, 4)
+        if (turns == 0) return source
+        val rotated = Bitmap.createBitmap(
+            source,
+            0,
+            0,
+            source.width,
+            source.height,
+            Matrix().apply { postRotate(leftRotationDegrees(turns)) },
+            true,
+        )
+        if (rotated !== source) source.recycle()
+        return rotated
+    }
+
+    private const val PREVIEW_MAX_EDGE = 2048
     private const val MAX_EDGE = 4096
+}
+
+internal fun leftRotationDegrees(leftQuarterTurns: Int): Float {
+    val turns = Math.floorMod(leftQuarterTurns, 4)
+    return if (turns == 0) 0f else -90f * turns
 }
