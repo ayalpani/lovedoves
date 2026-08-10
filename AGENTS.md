@@ -38,4 +38,7 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
 - The app locks whenever it leaves the foreground.
 - Notifications never contain a partner name, message preview, or media detail.
 - Love Doves is warm and calm, not styled like an enterprise security vault.
+- Keep onboarding guided and linear: welcome/name, choose inviter or invitee,
+  then show only that role's next action. Never mix invite creation, QR scanning,
+  link input, and the relay freischalt code on one screen.
 - Prefer Lucide icons and a small number of focused screens.

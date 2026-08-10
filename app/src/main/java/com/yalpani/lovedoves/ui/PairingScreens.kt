@@ -1,11 +1,13 @@
 package com.yalpani.lovedoves.ui
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -26,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,24 +52,19 @@ import com.yalpani.lovedoves.domain.PairingSnapshot
 
 @Composable
 internal fun ProfileSetupScreen(busy: Boolean, onSave: (String) -> Unit) {
+    var naming by rememberSaveable { mutableStateOf(false) }
+    BackHandler(naming) { naming = false }
+    if (!naming) {
+        WelcomeScreen { naming = true }
+        return
+    }
+
     var name by remember { mutableStateOf("") }
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 48.dp),
-        verticalArrangement = Arrangement.Center,
+    PairingStepLayout(
+        title = "Wie darf dein Lieblingsmensch dich nennen?",
+        description = "Der Name bleibt in eurem verschlüsselten Raum.",
+        onBack = { naming = false },
     ) {
-        HeartIcon(modifier = Modifier.size(52.dp))
-        Text(
-            "Wie darf dein Lieblingsmensch dich hier nennen?",
-            modifier = Modifier.padding(top = 24.dp),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            "Der Name bleibt in eurem verschlüsselten Raum.",
-            modifier = Modifier.padding(top = 10.dp, bottom = 24.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
-        )
         OutlinedTextField(
             value = name,
             onValueChange = { if (it.length <= 40) name = it },
@@ -77,10 +76,40 @@ internal fun ProfileSetupScreen(busy: Boolean, onSave: (String) -> Unit) {
             "Weiter",
             onClick = { onSave(name) },
             enabled = name.isNotBlank() && !busy,
-            modifier = Modifier.padding(top = 18.dp),
         )
     }
 }
+
+@Composable
+private fun WelcomeScreen(onContinue: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 48.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = CircleShape,
+            modifier = Modifier.size(88.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) { HeartIcon(modifier = Modifier.size(42.dp)) }
+        }
+        Text(
+            "Ein privater Raum nur für euch zwei.",
+            modifier = Modifier.padding(top = 30.dp),
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            "Keine Konten, keine Kontaktliste. Eure Nachrichten und Fotos bleiben verschlüsselt zwischen euren beiden Geräten.",
+            modifier = Modifier.padding(top = 14.dp, bottom = 32.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        LovePrimaryButton("Los geht’s", onClick = onContinue)
+    }
+}
+
+private enum class PairingEntryStep { ROLE, INVITE_CODE, INVITE_METHOD, JOIN_METHOD, JOIN_LINK }
 
 @Composable
 internal fun PairingHomeScreen(
@@ -91,70 +120,166 @@ internal fun PairingHomeScreen(
 ) {
     var bootstrap by remember { mutableStateOf(BuildConfig.RELAY_BOOTSTRAP_TOKEN) }
     var invitation by remember { mutableStateOf("") }
+    var step by rememberSaveable { mutableStateOf(PairingEntryStep.ROLE) }
+    BackHandler(step != PairingEntryStep.ROLE) {
+        step = when (step) {
+            PairingEntryStep.INVITE_METHOD -> if (BuildConfig.RELAY_BOOTSTRAP_TOKEN.isBlank()) {
+                PairingEntryStep.INVITE_CODE
+            } else {
+                PairingEntryStep.ROLE
+            }
+            PairingEntryStep.JOIN_LINK -> PairingEntryStep.JOIN_METHOD
+            else -> PairingEntryStep.ROLE
+        }
+    }
+
+    when (step) {
+        PairingEntryStep.ROLE -> PairingStepLayout(
+            title = "Wie möchtet ihr starten?",
+            description = "Wähle nur das aus, was gerade auf dich zutrifft.",
+        ) {
+            LovePrimaryButton(
+                "Ich möchte einladen",
+                onClick = {
+                    step = if (bootstrap.isBlank()) {
+                        PairingEntryStep.INVITE_CODE
+                    } else {
+                        PairingEntryStep.INVITE_METHOD
+                    }
+                },
+            )
+            LoveSecondaryButton(
+                "Ich wurde eingeladen",
+                onClick = { step = PairingEntryStep.JOIN_METHOD },
+            )
+        }
+
+        PairingEntryStep.INVITE_CODE -> PairingStepLayout(
+            title = "Einladung vorbereiten",
+            description = "Füge einmalig den Freischaltcode eures Love-Doves-Servers ein. Du bekommst ihn von der Person, die den privaten Server eingerichtet hat.",
+            onBack = { step = PairingEntryStep.ROLE },
+        ) {
+            OutlinedTextField(
+                value = bootstrap,
+                onValueChange = { bootstrap = it.trim() },
+                label = { Text("Einmaliger Freischaltcode") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LovePrimaryButton(
+                "Weiter",
+                onClick = { step = PairingEntryStep.INVITE_METHOD },
+                enabled = bootstrap.isNotBlank(),
+            )
+        }
+
+        PairingEntryStep.INVITE_METHOD -> PairingStepLayout(
+            title = "Seid ihr gerade zusammen?",
+            description = "Vor Ort ist der QR-Code am einfachsten. Sonst teilst du einen sicheren Einladungslink.",
+            onBack = {
+                step = if (BuildConfig.RELAY_BOOTSTRAP_TOKEN.isBlank()) {
+                    PairingEntryStep.INVITE_CODE
+                } else {
+                    PairingEntryStep.ROLE
+                }
+            },
+        ) {
+            LovePrimaryButton(
+                "Ja, QR-Code zeigen",
+                onClick = { onCreate(PairingMode.IN_PERSON, bootstrap) },
+                enabled = !busy,
+                icon = { QrIcon() },
+            )
+            LoveSecondaryButton(
+                "Nein, Link teilen",
+                onClick = { onCreate(PairingMode.REMOTE, bootstrap) },
+                enabled = !busy,
+                icon = { SendIcon() },
+            )
+            if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
+
+        PairingEntryStep.JOIN_METHOD -> PairingStepLayout(
+            title = "Wie hast du die Einladung bekommen?",
+            description = "Wähle den QR-Code oder den Link, den dein Lieblingsmensch dir gezeigt oder geschickt hat.",
+            onBack = { step = PairingEntryStep.ROLE },
+        ) {
+            LovePrimaryButton(
+                "QR-Code scannen",
+                onClick = onScan,
+                enabled = !busy,
+                icon = { QrIcon() },
+            )
+            LoveSecondaryButton(
+                "Einladungslink einfügen",
+                onClick = { step = PairingEntryStep.JOIN_LINK },
+                enabled = !busy,
+                icon = { SendIcon() },
+            )
+        }
+
+        PairingEntryStep.JOIN_LINK -> PairingStepLayout(
+            title = "Einladungslink einfügen",
+            description = "Kopiere den vollständigen Love-Doves-Link aus der Nachricht hier hinein.",
+            onBack = { step = PairingEntryStep.JOIN_METHOD },
+        ) {
+            OutlinedTextField(
+                value = invitation,
+                onValueChange = { invitation = it },
+                label = { Text("Einladungslink") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LovePrimaryButton(
+                "Einladung öffnen",
+                onClick = { onPaste(invitation.trim()) },
+                enabled = invitation.isNotBlank() && !busy,
+            )
+            if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
+    }
+}
+
+@Composable
+private fun PairingStepLayout(
+    title: String,
+    description: String,
+    onBack: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Spacer(Modifier.height(28.dp))
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = CircleShape,
-            modifier = Modifier.size(72.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) { HeartIcon(modifier = Modifier.size(34.dp)) }
+        Spacer(Modifier.height(16.dp))
+        if (onBack != null) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                ChevronLeftIcon("Zurück")
+            }
+        } else {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = CircleShape,
+                modifier = Modifier.size(72.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    HeartIcon(modifier = Modifier.size(34.dp))
+                }
+            }
         }
         Text(
-            "Euer Raum beginnt zu zweit.",
+            title,
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            "Kein Konto, keine Kontaktliste. Eine Einladung verbindet genau diese beiden Geräte.",
+            description,
+            modifier = Modifier.padding(bottom = 10.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
         )
-        if (BuildConfig.RELAY_BOOTSTRAP_TOKEN.isBlank()) {
-            OutlinedTextField(
-                value = bootstrap,
-                onValueChange = { bootstrap = it.trim() },
-                label = { Text("Einmaliges Server-Starttoken") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            )
-        }
-        LovePrimaryButton(
-            "QR-Code vor Ort",
-            onClick = { onCreate(PairingMode.IN_PERSON, bootstrap) },
-            enabled = bootstrap.isNotBlank() && !busy,
-            icon = { QrIcon() },
-        )
-        LoveSecondaryButton(
-            "Link aus der Ferne",
-            onClick = { onCreate(PairingMode.REMOTE, bootstrap) },
-            enabled = bootstrap.isNotBlank() && !busy,
-            icon = { SendIcon() },
-        )
-        Text(
-            "Oder du wurdest eingeladen",
-            modifier = Modifier.padding(top = 22.dp),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        LoveSecondaryButton("Einladungs-QR scannen", onClick = onScan, icon = { QrIcon() })
-        OutlinedTextField(
-            value = invitation,
-            onValueChange = { invitation = it },
-            label = { Text("Einladungslink einfügen") },
-            minLines = 2,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        LoveSecondaryButton(
-            "Einladung öffnen",
-            onClick = { onPaste(invitation.trim()) },
-            enabled = invitation.isNotBlank() && !busy,
-        )
-        if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        content()
         Spacer(Modifier.height(24.dp))
     }
 }

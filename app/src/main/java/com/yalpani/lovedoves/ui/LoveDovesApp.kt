@@ -81,8 +81,12 @@ internal fun LoveDovesApp(
         ActivityResultContracts.RequestPermission(),
     ) { onSystemPermissionPrompt(false) }
 
-    LaunchedEffect(incomingLink) {
-        if (!incomingLink.isNullOrBlank()) {
+    LaunchedEffect(incomingLink, content) {
+        if (
+            !incomingLink.isNullOrBlank() &&
+            content !is AppContentState.Loading &&
+            content !is AppContentState.ProfileSetup
+        ) {
             controller.acceptPayload(incomingLink)
             onLinkConsumed()
         }
