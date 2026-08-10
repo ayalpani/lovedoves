@@ -8,6 +8,7 @@ google-services.json
 *.jks
 *.keystore
 relay/data/
+relay/data-dev/
 relay/.env
+dist/
 .DS_Store
-

@@ -15,6 +15,23 @@ ANDROID_HOME=/Users/ayalpani/Library/Android/sdk \
 ./gradlew assembleDebug
 ```
 
+Für die tägliche Entwicklung reichen ein echtes Android-Handy und ein Emulator
+als zweites Gerät. `scripts/lovedoves-dev relay` startet den lokalen Blind-Relay,
+`scripts/lovedoves-dev reverse` verbindet alle erreichbaren Geräte per
+`adb reverse`. Die vollständige Anleitung steht in
+[`docs/development.md`](docs/development.md).
+
+## Inhalt des MVP
+
+- biometrisch gebundener SQLCipher-Tresor und einzeln AES-GCM-verschlüsselte Fotos
+- kontoloses QR-/App-Link-Pairing mit sechs Sicherheitswörtern
+- Signal-Protokoll für Text, Fotos und Zustellbestätigungen
+- kurzlebiger Go-Relay für ausschließlich undurchsichtigen Chiffretext
+- Partnergeräte-Ersatz mit Widerruf und paketweiser Verlaufsübertragung
+
+Der Relay ist kein Backup. Sind beide Geräte verloren, sind auch die Inhalte
+verloren.
+
 See `docs/architecture.md` and `docs/threat-model.md` before changing storage,
 pairing, transport, or cryptographic code.
 
