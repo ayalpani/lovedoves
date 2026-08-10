@@ -127,12 +127,14 @@ internal fun ConversationScreen(
     }
     val targetInputHeightPx = lastKeyboardHeightPx.takeIf { it > 0 }
         ?: with(density) { fallbackEmojiHeight.toPx().roundToInt() }
-    val emojiPanelHeightPx = if (inputTransition == ComposerInputTransition.NONE) {
-        targetInputHeightPx
-    } else {
-        (targetInputHeightPx - imeHeightPx).coerceAtLeast(0)
+    val inputSurfaceHeightPx = when {
+        showEmojiPicker || inputTransition != ComposerInputTransition.NONE -> targetInputHeightPx
+        imeHeightPx > 0 -> imeHeightPx
+        else -> 0
     }
-    val emojiPanelHeight = with(density) { emojiPanelHeightPx.toDp() }
+    val inputSurfaceHeight = with(density) { inputSurfaceHeightPx.toDp() }
+    val emojiSearchImeVisible =
+        showEmojiPicker && inputTransition == ComposerInputTransition.NONE && imeHeightPx > 0
     val listState = rememberLazyListState()
     BackHandler(enabled = showEmojiPicker) {
         showEmojiPicker = false
@@ -251,8 +253,8 @@ internal fun ConversationScreen(
             Modifier
                 .fillMaxWidth()
                 .background(LovePaper)
-                .imePadding()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .then(if (emojiSearchImeVisible) Modifier.imePadding() else Modifier),
         ) {
             MessageComposer(
                 text = text,
@@ -295,22 +297,27 @@ internal fun ConversationScreen(
                     onSend(message)
                 },
             )
-            AnimatedVisibility(
-                visible = showEmojiPicker,
-                enter = fadeIn(tween(120)),
-                exit = fadeOut(tween(EMOJI_EXIT_MILLIS)),
-            ) {
-                Column(Modifier.height(emojiPanelHeight)) {
-                    HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
-                    EmojiPickerKeyboard(
-                        modifier = Modifier.weight(1f),
-                        onEmojiPicked = { emoji ->
-                            val updated = text.insertAtSelection(emoji)
-                            if (updated.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
-                                text = updated
-                            }
-                        },
-                    )
+            if (inputSurfaceHeightPx > 0) {
+                Box(Modifier.fillMaxWidth().height(inputSurfaceHeight)) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showEmojiPicker,
+                        modifier = Modifier.fillMaxSize(),
+                        enter = fadeIn(tween(120)),
+                        exit = fadeOut(tween(EMOJI_EXIT_MILLIS)),
+                    ) {
+                        Column(Modifier.fillMaxSize()) {
+                            HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
+                            EmojiPickerKeyboard(
+                                modifier = Modifier.weight(1f),
+                                onEmojiPicked = { emoji ->
+                                    val updated = text.insertAtSelection(emoji)
+                                    if (updated.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
+                                        text = updated
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

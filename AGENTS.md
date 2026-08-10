@@ -70,9 +70,10 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   a draggable sheet. Keep the composer stationary and give vertical scroll exclusively to the
   emoji grid. Keep eight compact, generously spaced emojis per row, place search above the grid,
   match the panel to the last measured system-keyboard height, and turn the composer toggle into
-  a keyboard icon while the emoji panel is open. During keyboard/picker changes, grow one by the
-  exact amount the other shrinks so the conversation does not jump. Preserve and advance the
-  composer selection when inserting emojis, and fully close the IME before opening media capture.
+  a keyboard icon while the emoji panel is open. Once measured, keep keyboard and picker in one
+  fixed-height input slot so the conversation never resizes while switching between them. Preserve
+  and advance the composer selection when inserting emojis, and fully close the IME before opening
+  media capture.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
   encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.
 - Keep the red recording-stop square visibly inset inside the circular capture ring; it must
