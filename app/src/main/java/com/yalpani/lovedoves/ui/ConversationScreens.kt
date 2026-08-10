@@ -8,9 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -72,6 +70,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,6 +86,10 @@ import com.yalpani.lovedoves.domain.PairingMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun ConversationScreen(
@@ -100,9 +104,10 @@ internal fun ConversationScreen(
     onPhoto: (String) -> Unit,
     onVideo: (String) -> Unit,
 ) {
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(TextFieldValue()) }
     var showEmojiPicker by remember { mutableStateOf(false) }
-    var restoreKeyboard by remember { mutableStateOf(false) }
+    var inputTransition by remember { mutableStateOf(ComposerInputTransition.NONE) }
+    var openAttachmentWhenImeCloses by remember { mutableStateOf(false) }
     var lastKeyboardHeightPx by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -120,26 +125,62 @@ internal fun ConversationScreen(
     } else {
         320.dp
     }
-    val emojiKeyboardHeight = if (lastKeyboardHeightPx > 0) {
-        with(density) { lastKeyboardHeightPx.toDp() }
+    val targetInputHeightPx = lastKeyboardHeightPx.takeIf { it > 0 }
+        ?: with(density) { fallbackEmojiHeight.toPx().roundToInt() }
+    val emojiPanelHeightPx = if (inputTransition == ComposerInputTransition.NONE) {
+        targetInputHeightPx
     } else {
-        fallbackEmojiHeight
+        (targetInputHeightPx - imeHeightPx).coerceAtLeast(0)
     }
+    val emojiPanelHeight = with(density) { emojiPanelHeightPx.toDp() }
     val listState = rememberLazyListState()
     BackHandler(enabled = showEmojiPicker) {
         showEmojiPicker = false
+        inputTransition = ComposerInputTransition.NONE
         focusManager.clearFocus()
         keyboard?.hide()
     }
-    LaunchedEffect(imeHeightPx, showEmojiPicker) {
-        if (!showEmojiPicker && imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
+    LaunchedEffect(
+        imeHeightPx,
+        showEmojiPicker,
+        inputTransition,
+        openAttachmentWhenImeCloses,
+    ) {
+        if (
+            !showEmojiPicker &&
+            inputTransition == ComposerInputTransition.NONE &&
+            !openAttachmentWhenImeCloses &&
+            imeHeightPx > 0
+        ) {
+            lastKeyboardHeightPx = imeHeightPx
+        }
     }
-    LaunchedEffect(restoreKeyboard, showEmojiPicker) {
-        if (restoreKeyboard && !showEmojiPicker) {
+    LaunchedEffect(inputTransition) {
+        if (inputTransition == ComposerInputTransition.TO_KEYBOARD) {
             focusRequester.requestFocus()
             withFrameNanos { }
             keyboard?.show()
-            restoreKeyboard = false
+        }
+    }
+    LaunchedEffect(inputTransition, imeHeightPx) {
+        when {
+            inputTransition == ComposerInputTransition.TO_EMOJI && imeHeightPx == 0 -> {
+                inputTransition = ComposerInputTransition.NONE
+            }
+            inputTransition == ComposerInputTransition.TO_KEYBOARD && imeHeightPx > 0 -> {
+                delay(INPUT_SETTLE_MILLIS)
+                lastKeyboardHeightPx = imeHeightPx
+                showEmojiPicker = false
+                delay(EMOJI_EXIT_MILLIS.toLong())
+                inputTransition = ComposerInputTransition.NONE
+            }
+        }
+    }
+    LaunchedEffect(openAttachmentWhenImeCloses, imeHeightPx) {
+        if (openAttachmentWhenImeCloses && imeHeightPx == 0) {
+            withFrameNanos { }
+            openAttachmentWhenImeCloses = false
+            onAttachment()
         }
     }
     LaunchedEffect(messages.size) {
@@ -218,41 +259,55 @@ internal fun ConversationScreen(
                 busy = busy,
                 emojiPickerVisible = showEmojiPicker,
                 focusRequester = focusRequester,
-                onTextChange = { if (it.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it },
-                onTextFocus = { showEmojiPicker = false },
+                onTextChange = {
+                    if (it.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it
+                },
+                onTextFocus = {
+                    if (showEmojiPicker && inputTransition != ComposerInputTransition.TO_KEYBOARD) {
+                        inputTransition = ComposerInputTransition.TO_KEYBOARD
+                    }
+                },
                 onEmoji = {
                     if (showEmojiPicker) {
-                        showEmojiPicker = false
-                        restoreKeyboard = true
+                        inputTransition = ComposerInputTransition.TO_KEYBOARD
                     } else {
                         if (imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
+                        showEmojiPicker = true
+                        inputTransition = if (imeHeightPx > 0) {
+                            ComposerInputTransition.TO_EMOJI
+                        } else {
+                            ComposerInputTransition.NONE
+                        }
                         keyboard?.hide()
                         focusManager.clearFocus()
-                        showEmojiPicker = true
                     }
                 },
                 onAttachment = {
                     showEmojiPicker = false
-                    onAttachment()
+                    inputTransition = ComposerInputTransition.NONE
+                    openAttachmentWhenImeCloses = true
+                    focusManager.clearFocus()
+                    keyboard?.hide()
                 },
                 onSend = {
-                    val message = text
-                    text = ""
+                    val message = text.text
+                    text = TextFieldValue()
                     onSend(message)
                 },
             )
             AnimatedVisibility(
                 visible = showEmojiPicker,
-                enter = slideInVertically(tween(220)) { it } + fadeIn(tween(160)),
-                exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(140)),
+                enter = fadeIn(tween(120)),
+                exit = fadeOut(tween(EMOJI_EXIT_MILLIS)),
             ) {
-                Column {
+                Column(Modifier.height(emojiPanelHeight)) {
                     HorizontalDivider(color = LoveInk.copy(alpha = 0.12f))
                     EmojiPickerKeyboard(
-                        modifier = Modifier.height(emojiKeyboardHeight),
+                        modifier = Modifier.weight(1f),
                         onEmojiPicked = { emoji ->
-                            if (text.length + emoji.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
-                                text += emoji
+                            val updated = text.insertAtSelection(emoji)
+                            if (updated.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) {
+                                text = updated
                             }
                         },
                     )
@@ -264,17 +319,17 @@ internal fun ConversationScreen(
 
 @Composable
 private fun MessageComposer(
-    text: String,
+    text: TextFieldValue,
     busy: Boolean,
     emojiPickerVisible: Boolean,
     focusRequester: FocusRequester,
-    onTextChange: (String) -> Unit,
+    onTextChange: (TextFieldValue) -> Unit,
     onTextFocus: () -> Unit,
     onEmoji: () -> Unit,
     onAttachment: () -> Unit,
     onSend: () -> Unit,
 ) {
-    val canSend = text.isNotBlank() && !busy
+    val canSend = text.text.isNotBlank() && !busy
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
@@ -314,7 +369,7 @@ private fun MessageComposer(
                     maxLines = 5,
                     decorationBox = { innerTextField ->
                         Box {
-                            if (text.isEmpty()) {
+                            if (text.text.isEmpty()) {
                                 Text(
                                     "Etwas nur für euch …",
                                     color = LoveInk.copy(alpha = 0.5f),
@@ -349,6 +404,23 @@ private fun MessageComposer(
         }
     }
 }
+
+internal fun TextFieldValue.insertAtSelection(insertedText: String): TextFieldValue {
+    val selectionStart = min(selection.start, selection.end).coerceIn(0, text.length)
+    val selectionEnd = max(selection.start, selection.end).coerceIn(selectionStart, text.length)
+    val updatedText = text.replaceRange(selectionStart, selectionEnd, insertedText)
+    val updatedCursor = selectionStart + insertedText.length
+    return copy(
+        text = updatedText,
+        selection = TextRange(updatedCursor),
+        composition = null,
+    )
+}
+
+private enum class ComposerInputTransition { NONE, TO_EMOJI, TO_KEYBOARD }
+
+private const val INPUT_SETTLE_MILLIS = 120L
+private const val EMOJI_EXIT_MILLIS = 100
 
 @Composable
 private fun MessageBubble(
