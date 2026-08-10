@@ -1,2 +1,3 @@
 -keep class org.signal.libsignal.** { *; }
 -keep class com.google.protobuf.** { *; }
+-keep class com.yalpani.lovedoves.protocol.v1.** { *; }
