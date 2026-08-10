@@ -290,31 +290,19 @@ internal fun SettingsScreen(
                 SettingsSectionHeader("Verbindung")
             }
             item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp)) {
-                    Text(
-                        pair.partnerName,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        "Verbunden",
-                        modifier = Modifier.padding(top = 2.dp),
-                        color = LoveInk.copy(alpha = 0.62f),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        "Sicherheitswörter",
-                        modifier = Modifier.padding(top = 20.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        pair.safetyWords,
-                        modifier = Modifier.padding(top = 4.dp),
-                        color = LoveInk.copy(alpha = 0.62f),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
+                SettingsInfoItem(
+                    title = pair.partnerName,
+                    detail = "Verbunden",
+                )
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+            }
+            item {
+                SettingsInfoItem(
+                    title = "Sicherheitswörter",
+                    detail = pair.safetyWords,
+                )
             }
             item {
                 SettingsSectionHeader("Gerät")
@@ -426,6 +414,37 @@ private fun SettingsSectionHeader(label: String) {
 }
 
 @Composable
+private fun SettingsInfoItem(
+    title: String,
+    detail: String,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp)) {
+        SettingsRowTitle(title)
+        Text(
+            detail,
+            modifier = Modifier.padding(top = 2.dp),
+            color = LoveInk.copy(alpha = 0.62f),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+}
+
+@Composable
+private fun SettingsRowTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = LoveInk,
+) {
+    Text(
+        text,
+        modifier = modifier,
+        color = color,
+        style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
+        fontWeight = FontWeight.Medium,
+    )
+}
+
+@Composable
 private fun SettingsNavigationItem(
     label: String,
     enabled: Boolean,
@@ -443,12 +462,9 @@ private fun SettingsNavigationItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                label,
+            SettingsRowTitle(
+                text = label,
                 modifier = Modifier.weight(1f),
-                color = LoveInk,
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
-                fontWeight = FontWeight.Medium,
             )
             ChevronRightIcon(null)
         }
@@ -475,12 +491,10 @@ private fun SettingsDeleteItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             DeleteIcon(modifier = Modifier.size(32.dp), color = color)
-            Text(
-                label,
+            SettingsRowTitle(
+                text = label,
                 modifier = Modifier.weight(1f),
-                color = color.copy(alpha = 0.68f),
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 24.sp),
-                fontWeight = FontWeight.Medium,
+                color = color,
             )
         }
     }
