@@ -16,7 +16,7 @@ internal class MemoryMediaFile private constructor(
 
     fun readBytes(maxBytes: Int): ByteArray {
         val byteCount = size
-        require(byteCount in 1..maxBytes.toLong()) { "Das Video ist zu groß." }
+        require(byteCount in 1..maxBytes.toLong()) { "Das Medium ist zu groß." }
         val duplicate = duplicate()
         Os.lseek(duplicate.fileDescriptor, 0L, OsConstants.SEEK_SET)
         return ParcelFileDescriptor.AutoCloseInputStream(duplicate).use { input ->
@@ -24,7 +24,7 @@ internal class MemoryMediaFile private constructor(
                 var offset = 0
                 while (offset < result.size) {
                     val read = input.read(result, offset, result.size - offset)
-                    check(read > 0) { "Das Video konnte nicht vollständig gelesen werden." }
+                    check(read > 0) { "Das Medium konnte nicht vollständig gelesen werden." }
                     offset += read
                 }
             }

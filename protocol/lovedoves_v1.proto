@@ -111,6 +111,11 @@ message VideoMessageV1 {
   uint32 thumbnail_height = 7;
 }
 
+message VoiceMessageV1 {
+  EncryptedMediaV1 audio = 1;
+  uint64 duration_ms = 2;
+}
+
 message DeliveryReceiptV1 {
   string message_id = 1;
   int64 stored_at_epoch_ms = 2;
@@ -139,6 +144,7 @@ message ConversationEventV1 {
     DeviceRevocationV1 device_revocation = 16;
     VideoMessageV1 video = 17;
     ReadReceiptV1 read_receipt = 18 [deprecated = true];
+    VoiceMessageV1 voice = 19;
   }
 }
 

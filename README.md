@@ -23,9 +23,9 @@ als zweites Gerät. `scripts/lovedoves-dev relay` startet den lokalen Blind-Rela
 
 ## Inhalt des MVP
 
-- biometrisch gebundener SQLCipher-Tresor und einzeln AES-GCM-verschlüsselte Fotos und Videos
+- biometrisch gebundener SQLCipher-Tresor und einzeln AES-GCM-verschlüsselte Medien
 - kontoloses QR-/App-Link-Pairing mit sechs Sicherheitswörtern
-- Signal-Protokoll für Text, Fotos, kurze Videos und Zustellbestätigungen
+- Signal-Protokoll für Text, Fotos, kurze Videos, Sprachnachrichten und Zustellbestätigungen
 - kurzlebiger Go-Relay für ausschließlich undurchsichtigen Chiffretext
 - Partnergeräte-Ersatz mit Widerruf und paketweiser Verlaufsübertragung
 

@@ -106,6 +106,14 @@ internal class LoveDovesController(
         action { repository.sendVideo(video) }
     }
 
+    fun sendVoice(voice: PreparedVoice) {
+        if (mutableBusy.value) {
+            voice.clear()
+            return
+        }
+        action { repository.sendVoice(voice) }
+    }
+
     fun retryMessage(id: String) = action {
         repository.retryMessage(id)
     }

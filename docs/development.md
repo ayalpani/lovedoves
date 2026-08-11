@@ -54,5 +54,6 @@ scripts/lovedoves-dev check
 Das führt Android-Unit-Tests, Debug-Assembly, Lint, Go-Tests und `go vet` aus.
 Das Skript nutzt standardmäßig das Java 21 aus Android Studio; eine abweichende
 Java-21-Installation kann über `LOVE_DOVES_JAVA_HOME` gewählt werden.
-Biometrie, Foto- und Videokamera, Photo Picker, Hintergrundsperre,
-Prozessneustart und Netzverlust bleiben zusätzlich manuelle Gerätetests.
+Biometrie, Foto- und Videokamera, Photo Picker, Sprachnachrichten mit
+Halten/Verwerfen/Verriegeln/Pause, Hintergrundsperre, Prozessneustart und
+Netzverlust bleiben zusätzlich manuelle Gerätetests.

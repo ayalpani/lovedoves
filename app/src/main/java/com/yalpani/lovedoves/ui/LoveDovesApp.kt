@@ -187,14 +187,18 @@ internal fun LoveDovesApp(
                         pair = state.pair,
                         messages = state.messages,
                         photoBitmaps = photoBitmaps,
+                        voiceBytes = controller::mediaBytes,
                         busy = busy,
                         onSend = controller::sendText,
+                        onSendVoice = controller::sendVoice,
                         onAttachment = { overlay = Overlay.MediaCapture },
                         onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
                         onMedia = { overlay = Overlay.Media(it) },
                         onDeleteMessages = controller::deleteMessages,
                         onMessagesSeen = controller::markMessagesRead,
+                        onSystemPermissionPrompt = onSystemPermissionPrompt,
+                        onError = { localError = it },
                     )
                 }
             }

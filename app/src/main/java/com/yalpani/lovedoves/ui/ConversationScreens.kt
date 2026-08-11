@@ -1,12 +1,20 @@
 package com.yalpani.lovedoves.ui
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -36,12 +44,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,12 +61,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -78,6 +91,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +100,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.core.content.ContextCompat
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.LoveMist
@@ -93,6 +110,7 @@ import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.data.PairStateEntity
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import com.yalpani.lovedoves.domain.PairingMode
+import com.yalpani.lovedoves.domain.PreparedVoice
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -107,14 +125,18 @@ internal fun ConversationScreen(
     pair: PairStateEntity,
     messages: List<ConversationEventEntity>,
     photoBitmaps: PhotoBitmapLoader,
+    voiceBytes: suspend (String) -> ByteArray,
     busy: Boolean,
     onSend: (String) -> Unit,
+    onSendVoice: (PreparedVoice) -> Unit,
     onAttachment: () -> Unit,
     onSettings: () -> Unit,
     onRetry: (String) -> Unit,
     onMedia: (String) -> Unit,
     onDeleteMessages: (Set<String>) -> Unit,
     onMessagesSeen: (List<String>) -> Unit,
+    onSystemPermissionPrompt: (Boolean) -> Unit,
+    onError: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf(TextFieldValue()) }
     var showEmojiPicker by remember { mutableStateOf(false) }
@@ -128,6 +150,54 @@ internal fun ConversationScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
+    val voiceRecorder = remember(context) { MemoryVoiceRecorder(context.applicationContext) }
+    var voiceMode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
+    var voiceElapsedMillis by remember { mutableLongStateOf(0L) }
+    var voicePermissionPending by remember { mutableStateOf(false) }
+
+    fun cancelVoiceRecording() {
+        voiceRecorder.cancel()
+        voiceMode = VoiceRecordingMode.IDLE
+        voiceElapsedMillis = 0L
+    }
+
+    fun startVoiceRecording(mode: VoiceRecordingMode) {
+        if (voiceRecorder.isRecording || busy) return
+        runCatching { voiceRecorder.start() }
+            .onSuccess {
+                voiceElapsedMillis = 0L
+                voiceMode = mode
+            }
+            .onFailure {
+                cancelVoiceRecording()
+                onError(it.message ?: "Die Sprachaufnahme konnte nicht gestartet werden.")
+            }
+    }
+
+    fun finishVoiceRecording() {
+        if (!voiceRecorder.isRecording) return
+        runCatching { voiceRecorder.finish() }
+            .onSuccess(onSendVoice)
+            .onFailure { onError(it.message ?: "Die Sprachaufnahme konnte nicht gespeichert werden.") }
+        voiceMode = VoiceRecordingMode.IDLE
+        voiceElapsedMillis = 0L
+    }
+
+    val voicePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        onSystemPermissionPrompt(false)
+        val shouldStart = voicePermissionPending
+        voicePermissionPending = false
+        if (granted && shouldStart) {
+            startVoiceRecording(VoiceRecordingMode.LOCKED)
+        } else if (!granted && shouldStart) {
+            onError("Für Sprachnachrichten braucht Love Doves Zugriff auf das Mikrofon.")
+        }
+    }
+    DisposableEffect(voiceRecorder) {
+        onDispose(voiceRecorder::close)
+    }
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val imeHeightPx = (
@@ -166,6 +236,19 @@ internal fun ConversationScreen(
         inputTransition = ComposerInputTransition.NONE
         focusManager.clearFocus()
         keyboard?.hide()
+    }
+    BackHandler(enabled = voiceMode != VoiceRecordingMode.IDLE) {
+        cancelVoiceRecording()
+    }
+    LaunchedEffect(voiceMode) {
+        while (voiceMode != VoiceRecordingMode.IDLE) {
+            voiceElapsedMillis = voiceRecorder.elapsedMillis()
+            if (voiceElapsedMillis >= LoveDovesRepository.MAX_VOICE_DURATION_MILLIS) {
+                finishVoiceRecording()
+                break
+            }
+            delay(VOICE_TIMER_INTERVAL_MILLIS)
+        }
     }
     LaunchedEffect(
         imeHeightPx,
@@ -227,6 +310,7 @@ internal fun ConversationScreen(
         }
     }
     fun beginSelection(messageId: String) {
+        cancelVoiceRecording()
         showEmojiPicker = false
         inputTransition = ComposerInputTransition.NONE
         focusManager.clearFocus()
@@ -331,6 +415,7 @@ internal fun ConversationScreen(
                     MessageBubble(
                         message = message,
                         photoBitmaps = photoBitmaps,
+                        voiceBytes = voiceBytes,
                         selected = message.id in selectedMessageIds,
                         selectionMode = selectedMessageIds.isNotEmpty(),
                         onRetry = onRetry,
@@ -352,6 +437,8 @@ internal fun ConversationScreen(
                 text = text,
                 busy = busy,
                 emojiPickerVisible = showEmojiPicker,
+                voiceMode = voiceMode,
+                voiceElapsedMillis = voiceElapsedMillis,
                 focusRequester = focusRequester,
                 onTextChange = {
                     if (it.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it
@@ -388,6 +475,43 @@ internal fun ConversationScreen(
                     text = TextFieldValue()
                     onSend(message)
                 },
+                onVoiceStart = {
+                    if (
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        startVoiceRecording(VoiceRecordingMode.HOLDING)
+                    } else {
+                        voicePermissionPending = true
+                        onSystemPermissionPrompt(true)
+                        voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onVoiceCancel = ::cancelVoiceRecording,
+                onVoiceLock = {
+                    if (voiceMode == VoiceRecordingMode.HOLDING) {
+                        voiceMode = VoiceRecordingMode.LOCKED
+                    }
+                },
+                onVoiceRelease = {
+                    if (voiceMode == VoiceRecordingMode.HOLDING) finishVoiceRecording()
+                },
+                onVoicePauseToggle = {
+                    runCatching {
+                        if (voiceMode == VoiceRecordingMode.PAUSED) {
+                            voiceRecorder.resume()
+                            voiceMode = VoiceRecordingMode.LOCKED
+                        } else if (voiceMode == VoiceRecordingMode.LOCKED) {
+                            voiceRecorder.pause()
+                            voiceElapsedMillis = voiceRecorder.elapsedMillis()
+                            voiceMode = VoiceRecordingMode.PAUSED
+                        }
+                    }.onFailure {
+                        cancelVoiceRecording()
+                        onError(it.message ?: "Die Aufnahme konnte nicht pausiert werden.")
+                    }
+                },
+                onVoiceSend = ::finishVoiceRecording,
             )
             if (inputSurfaceHeightPx > 0) {
                 Box(Modifier.fillMaxWidth().height(inputSurfaceHeight)) {
@@ -451,90 +575,260 @@ internal fun ConversationScreen(
 }
 
 @Composable
-private fun MessageComposer(
+internal fun MessageComposer(
     text: TextFieldValue,
     busy: Boolean,
     emojiPickerVisible: Boolean,
+    voiceMode: VoiceRecordingMode,
+    voiceElapsedMillis: Long,
     focusRequester: FocusRequester,
     onTextChange: (TextFieldValue) -> Unit,
     onTextFocus: () -> Unit,
     onEmoji: () -> Unit,
     onAttachment: () -> Unit,
     onSend: () -> Unit,
+    onVoiceStart: () -> Unit,
+    onVoiceCancel: () -> Unit,
+    onVoiceLock: () -> Unit,
+    onVoiceRelease: () -> Unit,
+    onVoicePauseToggle: () -> Unit,
+    onVoiceSend: () -> Unit,
 ) {
     val canSend = text.text.isNotBlank() && !busy
+    val recording = voiceMode != VoiceRecordingMode.IDLE
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Surface(
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(24.dp),
-            color = Color.White,
-            border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
-        ) {
-            Row(
-                Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Box(Modifier.weight(1f), contentAlignment = Alignment.BottomCenter) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
             ) {
-                IconButton(
-                    onClick = onEmoji,
-                    enabled = !busy,
-                    modifier = Modifier.size(44.dp),
+                Row(
+                    Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (emojiPickerVisible) {
-                        KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
-                    } else {
-                        SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                    IconButton(
+                        onClick = onEmoji,
+                        enabled = !busy && !recording,
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        if (emojiPickerVisible) {
+                            KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
+                        } else {
+                            SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                        }
+                    }
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { if (!recording) onTextChange(it) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { if (it.isFocused) onTextFocus() }
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
+                        cursorBrush = SolidColor(LoveInk),
+                        keyboardOptions = KeyboardOptions(showKeyboardOnFocus = !emojiPickerVisible),
+                        maxLines = 5,
+                        decorationBox = { innerTextField ->
+                            Box {
+                                if (text.text.isEmpty()) {
+                                    Text(
+                                        "Etwas nur für euch …",
+                                        color = LoveInk.copy(alpha = 0.5f),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                    IconButton(
+                        onClick = onAttachment,
+                        enabled = !busy && !recording,
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
                     }
                 }
-                BasicTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { if (it.isFocused) onTextFocus() }
-                        .padding(horizontal = 4.dp, vertical = 12.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
-                    cursorBrush = SolidColor(LoveInk),
-                    keyboardOptions = KeyboardOptions(showKeyboardOnFocus = !emojiPickerVisible),
-                    maxLines = 5,
-                    decorationBox = { innerTextField ->
-                        Box {
-                            if (text.text.isEmpty()) {
-                                Text(
-                                    "Etwas nur für euch …",
-                                    color = LoveInk.copy(alpha = 0.5f),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                            }
-                            innerTextField()
-                        }
-                    },
+            }
+            if (recording) {
+                VoiceRecordingBar(
+                    mode = voiceMode,
+                    elapsedMillis = voiceElapsedMillis,
+                    onCancel = onVoiceCancel,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                IconButton(
-                    onClick = onAttachment,
-                    enabled = !busy,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
+            }
+        }
+        ComposerVoiceAction(
+            mode = voiceMode,
+            canSendText = canSend,
+            enabled = !busy,
+            onSendText = onSend,
+            onVoiceStart = onVoiceStart,
+            onVoiceCancel = onVoiceCancel,
+            onVoiceLock = onVoiceLock,
+            onVoiceRelease = onVoiceRelease,
+            onPauseToggle = onVoicePauseToggle,
+            onSendVoice = onVoiceSend,
+        )
+    }
+}
+
+@Composable
+private fun VoiceRecordingBar(
+    mode: VoiceRecordingMode,
+    elapsedMillis: Long,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pulse by rememberInfiniteTransition(label = "recording pulse").animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
+        label = "recording dot",
+    )
+    Surface(
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .background(Color(0xFFD94C4C).copy(alpha = pulse), CircleShape),
+            )
+            Text(
+                formatVoiceRecordingDuration(elapsedMillis),
+                color = LoveInk.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            if (mode == VoiceRecordingMode.HOLDING) {
+                Text(
+                    "Nach links verwerfen",
+                    modifier = Modifier.weight(1f),
+                    color = LoveInk.copy(alpha = 0.5f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                    Text("Abbrechen")
                 }
             }
         }
-        IconButton(
-            onClick = onSend,
-            enabled = canSend,
-            modifier = Modifier
-                .size(48.dp)
-                .background(if (canSend) LoveInk else LoveMist, CircleShape),
-        ) {
-            SendIcon(
-                "Nachricht senden",
-                modifier = Modifier.size(20.dp),
-                color = if (canSend) Color.White else LoveInk.copy(alpha = 0.35f),
+    }
+}
+
+@Composable
+private fun ComposerVoiceAction(
+    mode: VoiceRecordingMode,
+    canSendText: Boolean,
+    enabled: Boolean,
+    onSendText: () -> Unit,
+    onVoiceStart: () -> Unit,
+    onVoiceCancel: () -> Unit,
+    onVoiceLock: () -> Unit,
+    onVoiceRelease: () -> Unit,
+    onPauseToggle: () -> Unit,
+    onSendVoice: () -> Unit,
+) {
+    val recording = mode != VoiceRecordingMode.IDLE
+    val locked = mode == VoiceRecordingMode.LOCKED || mode == VoiceRecordingMode.PAUSED
+    val thresholdPx = with(LocalDensity.current) { VOICE_GESTURE_THRESHOLD.toPx() }
+    val pulse by rememberInfiniteTransition(label = "microphone pulse").animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(650), repeatMode = RepeatMode.Reverse),
+        label = "microphone background",
+    )
+    Box(
+        modifier = Modifier
+            .width(60.dp)
+            .height(if (recording) 84.dp else 48.dp),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        if (recording) {
+            Surface(
+                modifier = Modifier.size(36.dp).align(Alignment.TopCenter),
+                shape = CircleShape,
+                color = Color.White,
+                border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
+            ) {
+                Box(
+                    modifier = if (locked) Modifier.clickable(onClick = onPauseToggle) else Modifier,
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (mode) {
+                        VoiceRecordingMode.PAUSED -> PlayIcon(
+                            "Aufnahme fortsetzen",
+                            Modifier.size(18.dp),
+                        )
+                        VoiceRecordingMode.LOCKED -> PauseIcon(
+                            "Aufnahme pausieren",
+                            Modifier.size(18.dp),
+                        )
+                        else -> LockIcon("Nach oben ziehen zum Verriegeln", Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+        val actionModifier = Modifier
+            .size(if (recording) 60.dp else 48.dp)
+            .background(
+                when {
+                    recording -> LoveInk.copy(alpha = pulse)
+                    canSendText -> LoveInk
+                    enabled -> LoveInk
+                    else -> LoveMist
+                },
+                CircleShape,
             )
+            .then(
+                if (!canSendText && !locked) {
+                    Modifier.voiceRecordGesture(
+                        enabled = enabled,
+                        thresholdPx = thresholdPx,
+                        onStart = onVoiceStart,
+                        onCancel = onVoiceCancel,
+                        onLock = onVoiceLock,
+                        onRelease = onVoiceRelease,
+                    )
+                } else {
+                    Modifier.clickable(
+                        enabled = enabled,
+                        onClick = if (locked) onSendVoice else onSendText,
+                    )
+                },
+            )
+        Box(actionModifier, contentAlignment = Alignment.Center) {
+            if (canSendText || locked) {
+                SendIcon(
+                    if (locked) "Sprachnachricht senden" else "Nachricht senden",
+                    modifier = Modifier.size(if (recording) 25.dp else 20.dp),
+                    color = Color.White,
+                )
+            } else {
+                MicrophoneIcon(
+                    null,
+                    modifier = Modifier.size(if (recording) 26.dp else 22.dp),
+                    color = if (enabled) Color.White else LoveInk.copy(alpha = 0.35f),
+                )
+            }
         }
     }
 }
@@ -552,15 +846,27 @@ internal fun TextFieldValue.insertAtSelection(insertedText: String): TextFieldVa
 }
 
 private enum class ComposerInputTransition { NONE, TO_EMOJI, TO_KEYBOARD }
+internal enum class VoiceRecordingMode { IDLE, HOLDING, LOCKED, PAUSED }
 
 private const val INPUT_SETTLE_MILLIS = 120L
 private const val EMOJI_EXIT_MILLIS = 100
+private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
+private val VOICE_GESTURE_THRESHOLD = 78.dp
+
+internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
+    val clamped = durationMillis.coerceAtLeast(0L)
+    val minutes = clamped / 60_000L
+    val seconds = (clamped / 1_000L) % 60L
+    val tenths = (clamped / 100L) % 10L
+    return "%d:%02d,%d".format(minutes, seconds, tenths)
+}
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun MessageBubble(
     message: ConversationEventEntity,
     photoBitmaps: PhotoBitmapLoader,
+    voiceBytes: suspend (String) -> ByteArray,
     selected: Boolean,
     selectionMode: Boolean,
     onRetry: (String) -> Unit,
@@ -651,6 +957,14 @@ private fun MessageBubble(
                             MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
                         }
                     }
+                    LoveDovesRepository.KIND_VOICE -> {
+                        VoiceMessageContent(
+                            mediaId = requireNotNull(message.mediaId),
+                            declaredDurationMillis = 0L,
+                            mediaBytes = voiceBytes,
+                            footer = { CompactMessageMetadata(message) },
+                        )
+                    }
                     else -> MessageText(message)
                     }
                 }
@@ -689,14 +1003,8 @@ private fun MessageBubble(
 @Composable
 private fun MessageText(message: ConversationEventEntity) {
     val metadataColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val statusColor = if (message.deliveryState == LoveDovesRepository.DELIVERY_READ) {
-        Color(0xFFB44E68)
-    } else if (message.deliveryState == LoveDovesRepository.DELIVERY_FAILED) {
-        MaterialTheme.colorScheme.error
-    } else {
-        metadataColor
-    }
     val metadata = messageMetadata(message)
+    val inlineId = "delivery-state"
     Text(
         text = buildAnnotatedString {
             append(message.body.orEmpty())
@@ -709,22 +1017,34 @@ private fun MessageText(message: ConversationEventEntity) {
             )
             append(formatTime(message.createdAtEpochMillis))
             pop()
-            if (metadata.symbol.isNotEmpty()) {
+            if (metadata.visual != null) {
                 append("\u00A0")
-                pushStyle(
-                    SpanStyle(
-                        color = statusColor,
-                        fontSize = MaterialTheme.typography.labelMedium.fontSize,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                )
-                append(metadata.symbol)
-                pop()
+                appendInlineContent(inlineId, metadata.description)
             }
+        },
+        inlineContent = if (metadata.visual == null) {
+            emptyMap()
+        } else {
+            mapOf(
+                inlineId to InlineTextContent(
+                    Placeholder(
+                        width = 1.5.em,
+                        height = 0.9.em,
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+                    ),
+                ) {
+                    DeliveryStateIcon(
+                        visual = metadata.visual,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                },
+            )
         },
         modifier = Modifier
             .padding(horizontal = 18.dp, vertical = 12.dp)
-            .semantics { if (metadata.description.isNotEmpty()) stateDescription = metadata.description },
+            .semantics {
+                if (metadata.description.isNotEmpty()) stateDescription = metadata.description
+            },
         style = MaterialTheme.typography.bodyLarge,
     )
 }
@@ -740,39 +1060,102 @@ private fun MessageMediaMetadata(
         color = Color.Black.copy(alpha = 0.52f),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Text(
-            text = buildString {
-                append(formatTime(message.createdAtEpochMillis))
-                if (metadata.symbol.isNotEmpty()) append("  ${metadata.symbol}")
-            },
+        Row(
             modifier = Modifier
                 .padding(horizontal = 7.dp, vertical = 3.dp)
                 .semantics {
                     if (metadata.description.isNotEmpty()) stateDescription = metadata.description
                 },
-            color = if (message.deliveryState == LoveDovesRepository.DELIVERY_READ) {
-                Color(0xFFFFAFC2)
-            } else {
-                Color.White
-            },
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = formatTime(message.createdAtEpochMillis),
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            metadata.visual?.let {
+                DeliveryStateIcon(
+                    visual = it,
+                    modifier = Modifier.size(width = 17.dp, height = 12.dp),
+                    onDarkSurface = true,
+                )
+            }
+        }
     }
 }
 
-private data class MessageMetadata(val symbol: String, val description: String)
+@Composable
+private fun CompactMessageMetadata(message: ConversationEventEntity) {
+    val metadata = messageMetadata(message)
+    Row(
+        modifier = Modifier.semantics {
+            if (metadata.description.isNotEmpty()) stateDescription = metadata.description
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            formatTime(message.createdAtEpochMillis),
+            color = LoveInk.copy(alpha = 0.58f),
+            style = MaterialTheme.typography.labelSmall,
+        )
+        metadata.visual?.let {
+            DeliveryStateIcon(
+                visual = it,
+                modifier = Modifier.size(width = 17.dp, height = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeliveryStateIcon(
+    visual: DeliveryVisual,
+    modifier: Modifier,
+    onDarkSurface: Boolean = false,
+) {
+    val color = when (visual) {
+        DeliveryVisual.READ -> if (onDarkSurface) Color(0xFF8EE292) else Color(0xFF50B356)
+        DeliveryVisual.FAILED -> MaterialTheme.colorScheme.error
+        else -> if (onDarkSurface) Color.White else LoveInk.copy(alpha = 0.52f)
+    }
+    when (visual) {
+        DeliveryVisual.SENDING -> DeliveryClockIcon(modifier = modifier, color = color)
+        DeliveryVisual.SENT -> DeliveryCheckIcon(modifier = modifier, color = color)
+        DeliveryVisual.DELIVERED,
+        DeliveryVisual.READ,
+        -> DeliveryCheckCheckIcon(modifier = modifier, color = color)
+        DeliveryVisual.FAILED -> DeliveryErrorIcon(modifier = modifier, color = color)
+    }
+}
+
+private enum class DeliveryVisual { SENDING, SENT, DELIVERED, READ, FAILED }
+
+private data class MessageMetadata(
+    val visual: DeliveryVisual?,
+    val description: String,
+)
 
 private fun messageMetadata(message: ConversationEventEntity): MessageMetadata =
     if (!message.outgoing) {
-        MessageMetadata("", "")
+        MessageMetadata(null, "")
     } else {
         when (message.deliveryState) {
-            LoveDovesRepository.DELIVERY_SENDING -> MessageMetadata("◷", "Wird gesendet")
-            LoveDovesRepository.DELIVERY_SENT -> MessageMetadata("✓", "Gesendet")
-            LoveDovesRepository.DELIVERY_DELIVERED -> MessageMetadata("✓✓", "Zugestellt")
-            LoveDovesRepository.DELIVERY_READ -> MessageMetadata("✓✓", "Gelesen")
-            else -> MessageMetadata("!", "Nicht gesendet")
+            LoveDovesRepository.DELIVERY_SENDING -> {
+                MessageMetadata(DeliveryVisual.SENDING, "Wird gesendet")
+            }
+            LoveDovesRepository.DELIVERY_SENT -> {
+                MessageMetadata(DeliveryVisual.SENT, "Gesendet")
+            }
+            LoveDovesRepository.DELIVERY_DELIVERED -> {
+                MessageMetadata(DeliveryVisual.DELIVERED, "Zugestellt")
+            }
+            LoveDovesRepository.DELIVERY_READ -> {
+                MessageMetadata(DeliveryVisual.READ, "Gelesen")
+            }
+            else -> MessageMetadata(DeliveryVisual.FAILED, "Nicht gesendet")
         }
     }
 

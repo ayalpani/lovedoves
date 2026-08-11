@@ -11,7 +11,8 @@ Tresor erhalten ist.
    QR-/Link- sowie Sicherheitswortvergleich.
 4. Nach beidseitiger biometrischer Bestätigung sendet das verbliebene Gerät ein
    Manifest und anschließend einzelne, idempotente Recovery-Batches. Fotos,
-   Videos und Video-Vorschaubilder bleiben getrennte verschlüsselte Objekte.
+   Videos, Video-Vorschaubilder und Sprachnachrichten bleiben getrennte
+   verschlüsselte Objekte.
 5. Ein `DeviceRevocationV1` bindet den alten an den neuen öffentlichen
    Identitätsschlüssel.
 

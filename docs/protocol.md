@@ -9,8 +9,8 @@ zu Klartext-Fallbacks verleiten.
 - `InviteV1`, `PairingReferenceV1`, `PairResponseV1` und
   `PairConfirmationV1`: kontolose Paarung und gegenseitige Bestätigung.
 - `EnvelopeV1`: Signal-Nachrichtentyp und Signal-Chiffretext.
-- `ConversationEventV1`: Text, Foto, Video, Zustellbestätigung, Paarbestätigung,
-  Wiederherstellung und Gerätewiderruf.
+- `ConversationEventV1`: Text, Foto, Video, Sprache, Zustellbestätigung,
+  Paarbestätigung, Wiederherstellung und Gerätewiderruf.
 - `RecoveryManifestV1`, `RecoveryBatchV1`, `RecoveryRecordV1` und
   `DeviceRevocationV1`: idempotente Partner-Wiederherstellung.
 
@@ -24,6 +24,10 @@ Ein Video verwendet `VideoMessageV1` und zwei getrennte `EncryptedMediaV1`-
 Objekte: das Video und sein Vorschaubild. Dauer und Abmessungen liegen im
 Signal-geschützten Ereignis. Beide Relay-Objekte besitzen unabhängige Schlüssel,
 Nonces und Prüfsummen.
+
+Eine Sprachnachricht verwendet `VoiceMessageV1` mit einem `audio/mp4`-
+`EncryptedMediaV1` und ihrer Dauer. Die AAC-Aufnahme wird vor Ablage und
+Transport wie jedes andere Medium mit einem eigenen Schlüssel verschlüsselt.
 
 `DeliveryReceiptV1` unterscheidet „auf dem Partnergerät gespeichert“ und
 „im geöffneten Chat gesehen“. Lesebestätigungen bleiben Signal-verschlüsselt

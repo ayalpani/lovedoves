@@ -31,6 +31,7 @@ import com.yalpani.lovedoves.protocol.v1.RecoveryManifestV1
 import com.yalpani.lovedoves.protocol.v1.RecoveryRecordV1
 import com.yalpani.lovedoves.protocol.v1.TextMessageV1
 import com.yalpani.lovedoves.protocol.v1.VideoMessageV1
+import com.yalpani.lovedoves.protocol.v1.VoiceMessageV1
 import com.yalpani.lovedoves.security.EncryptedMedia
 import com.yalpani.lovedoves.security.EncryptedMediaStore
 import com.yalpani.lovedoves.security.PairingPayloadCodec
@@ -91,6 +92,13 @@ internal data class PreparedVideo(
         mp4.fill(0)
         thumbnailJpeg.fill(0)
     }
+}
+
+internal data class PreparedVoice(
+    val m4a: ByteArray,
+    val durationMillis: Long,
+) {
+    fun clear() = m4a.fill(0)
 }
 
 internal class LoveDovesRepository(
@@ -546,6 +554,61 @@ internal class LoveDovesRepository(
         }
     }
 
+    suspend fun sendVoice(voice: PreparedVoice) = io {
+        require(voice.m4a.size <= MAX_VOICE_BYTES)
+        require(voice.durationMillis in 1..MAX_VOICE_DURATION_MILLIS)
+        var encryptedVoice: EncryptedMedia? = null
+        val id = UUID.randomUUID().toString()
+        var stored = false
+        try {
+            encryptedVoice = session.media.encrypt(voice.m4a)
+            val now = System.currentTimeMillis()
+            database.withTransaction {
+                database.mediaDao().insert(
+                    encryptedVoice.toEntity(
+                        mimeType = VOICE_MIME_TYPE,
+                        width = 0,
+                        height = 0,
+                        durationMillis = voice.durationMillis,
+                    ),
+                )
+                database.conversationDao().insert(
+                    ConversationEventEntity(
+                        id,
+                        true,
+                        KIND_VOICE,
+                        null,
+                        encryptedVoice.id,
+                        now,
+                        DELIVERY_SENDING,
+                    ),
+                )
+            }
+            stored = true
+            val event = ConversationEventV1.newBuilder()
+                .setVersion(1)
+                .setEventId(id)
+                .setCreatedAtEpochMs(now)
+                .setVoice(
+                    VoiceMessageV1.newBuilder()
+                        .setAudio(encryptedVoice.toProtocolMedia(VOICE_MIME_TYPE))
+                        .setDurationMs(voice.durationMillis),
+                )
+                .build()
+            enqueueAndUpload(id, id, event)
+        } catch (failure: Throwable) {
+            if (stored) {
+                database.conversationDao().updateDelivery(id, DELIVERY_FAILED)
+            } else {
+                encryptedVoice?.let { session.media.delete(it.relativePath) }
+            }
+            throw failure
+        } finally {
+            encryptedVoice?.key?.fill(0)
+            voice.clear()
+        }
+    }
+
     suspend fun retryMessage(messageId: String) = io {
         val outbox = requireNotNull(database.outboxDao().get(messageId))
         uploadOutbox(outbox)
@@ -849,6 +912,33 @@ internal class LoveDovesRepository(
                         }
                         receiptFor = event.eventId
                     }
+                    ConversationEventV1.PayloadCase.VOICE -> {
+                        validateVoice(event.voice)
+                        val voice = importMedia(
+                            event.voice.audio,
+                            width = 0,
+                            height = 0,
+                            available = available,
+                            durationMillis = event.voice.durationMs,
+                        )
+                        database.mediaDao().insert(voice)
+                        database.conversationDao().insert(
+                            ConversationEventEntity(
+                                event.eventId,
+                                false,
+                                KIND_VOICE,
+                                null,
+                                voice.id,
+                                event.createdAtEpochMs,
+                                DELIVERY_DELIVERED,
+                            ),
+                        )
+                        database.processedObjectDao().insert(
+                            ProcessedObjectEntity(voice.id, System.currentTimeMillis()),
+                        )
+                        mediaToDelete += voice.id
+                        receiptFor = event.eventId
+                    }
                     ConversationEventV1.PayloadCase.DELIVERY_RECEIPT -> {
                         val receipt = event.deliveryReceipt
                         val messageIds = if (receipt.read) {
@@ -1019,6 +1109,37 @@ internal class LoveDovesRepository(
                                         )
                                         mediaToDelete += mediaId
                                     }
+                                }
+                                ConversationEventV1.PayloadCase.VOICE -> {
+                                    validateVoice(archived.voice)
+                                    val voice = importMedia(
+                                        archived.voice.audio,
+                                        width = 0,
+                                        height = 0,
+                                        available = available,
+                                        durationMillis = archived.voice.durationMs,
+                                    )
+                                    if (database.mediaDao().get(voice.id) == null) {
+                                        database.mediaDao().insert(voice)
+                                    }
+                                    database.conversationDao().insert(
+                                        ConversationEventEntity(
+                                            archived.eventId,
+                                            record.outgoingOnRecoveringDevice,
+                                            KIND_VOICE,
+                                            null,
+                                            voice.id,
+                                            archived.createdAtEpochMs,
+                                            DELIVERY_DELIVERED,
+                                        ),
+                                    )
+                                    database.processedObjectDao().insert(
+                                        ProcessedObjectEntity(
+                                            voice.id,
+                                            System.currentTimeMillis(),
+                                        ),
+                                    )
+                                    mediaToDelete += voice.id
                                 }
                                 else -> error("Unsupported recovery record")
                             }
@@ -1243,6 +1364,14 @@ internal class LoveDovesRepository(
                         .setThumbnailHeight(thumbnail.height),
                 ).build()
             }
+            KIND_VOICE -> {
+                val media = requireNotNull(database.mediaDao().get(requireNotNull(mediaId)))
+                builder.setVoice(
+                    VoiceMessageV1.newBuilder()
+                        .setAudio(media.toProtocolMedia())
+                        .setDurationMs(media.durationMillis),
+                ).build()
+            }
             else -> error("Unsupported local conversation event")
         }
     }
@@ -1416,6 +1545,11 @@ internal class LoveDovesRepository(
         require(video.durationMs in 1..MAX_VIDEO_DURATION_MILLIS)
     }
 
+    private fun validateVoice(voice: VoiceMessageV1) {
+        validateMedia(voice.audio, VOICE_MIME_TYPE)
+        require(voice.durationMs in 1..MAX_VOICE_DURATION_MILLIS)
+    }
+
     private fun validateMedia(media: EncryptedMediaV1, mimeType: String) {
         require(media.mediaId.matches(UUID_PATTERN))
         require(media.mimeType == mimeType)
@@ -1531,6 +1665,7 @@ internal class LoveDovesRepository(
         const val KIND_TEXT = "TEXT"
         const val KIND_PHOTO = "PHOTO"
         const val KIND_VIDEO = "VIDEO"
+        const val KIND_VOICE = "VOICE"
         const val DELIVERY_SENDING = "SENDING"
         const val DELIVERY_SENT = "SENT"
         const val DELIVERY_DELIVERED = "DELIVERED"
@@ -1539,11 +1674,14 @@ internal class LoveDovesRepository(
         const val MAX_TEXT_LENGTH = 4_000
         const val MAX_PHOTO_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
         const val MAX_VIDEO_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
+        const val MAX_VOICE_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
         private const val CAPABILITY_BYTES = 32
         private const val MAX_SIGNAL_MESSAGE_BYTES = 512 * 1024
         private const val MAX_PHOTO_EDGE = 4_096
         private const val MAX_VIDEO_EDGE = 8_192
         private const val MAX_VIDEO_DURATION_MILLIS = 24L * 60 * 60 * 1_000
+        const val MAX_VOICE_DURATION_MILLIS = 10L * 60 * 1_000
+        const val VOICE_MIME_TYPE = "audio/mp4"
         private const val PHOTO_KEY_BYTES = 32
         private const val PHOTO_NONCE_BYTES = 12
         private const val SHA256_BYTES = 32

@@ -204,13 +204,84 @@ internal fun HeartIcon(description: String? = null, modifier: Modifier = Modifie
     )
 
 @Composable
-internal fun LockIcon(description: String? = null) = LoveIcon(
+internal fun LockIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
     listOf(
         "M13 16A1 1 0 0 1 12 17 1 1 0 0 1 11 16 1 1 0 0 1 13 16Z",
         "M5 10H19A2 2 0 0 1 21 12V20A2 2 0 0 1 19 22H5A2 2 0 0 1 3 20V12A2 2 0 0 1 5 10Z",
         "M7 10V7a5 5 0 0 1 10 0v3",
     ),
     description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun MicrophoneIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf(
+        "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z",
+        "M19 10v2a7 7 0 0 1-14 0v-2",
+        "M12 19v3",
+        "M8 22h8",
+    ),
+    description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun DeliveryCheckIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf("m5 12 4 4L19 6"),
+    description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun DeliveryCheckCheckIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf("M18 6 7 17l-5-5", "m22 10-7.5 7.5L13 16"),
+    description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun DeliveryClockIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf("M12 6v6l4 2", "M22 12a10 10 0 1 1-20 0 10 10 0 1 1 20 0"),
+    description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun DeliveryErrorIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf("M12 8v4", "M12 16h.01", "M22 12a10 10 0 1 1-20 0 10 10 0 1 1 20 0"),
+    description,
+    modifier,
+    color,
 )
 
 @Composable

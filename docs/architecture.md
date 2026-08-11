@@ -22,13 +22,15 @@ geschlossen. Android-Backup ist deaktiviert und `FLAG_SECURE` schützt Fenster
 und App-Übersicht.
 
 Nachrichtentext, Medien-Metadaten, Signal-Identität, Sessions und Ratchet-Zustand
-liegen in der SQLCipher-Datenbank. Jedes Foto, Video und Video-Vorschaubild hat
-einen eigenen zufälligen AES-256-GCM-Schlüssel und einen UUID-Dateinamen. Aus
+liegen in der SQLCipher-Datenbank. Jedes Foto, Video, Video-Vorschaubild und jede
+Sprachnachricht hat einen eigenen zufälligen AES-256-GCM-Schlüssel und einen
+UUID-Dateinamen. Aus
 CameraX und Photo Picker wird direkt im Speicher ein JPEG ohne EXIF erzeugt.
 CameraX schreibt Videoaufnahmen ohne App-Standortmetadaten direkt in einen
 anonymen RAM-basierten Dateideskriptor. Importierte Videos werden dort ohne
 Container-Metadaten neu geschrieben. Eine unverschlüsselte temporäre App-Datei
-gibt es nicht.
+gibt es nicht. Sprachnachrichten werden als AAC in MPEG-4 ebenfalls direkt in
+einen anonymen RAM-Dateideskriptor aufgenommen und erst danach verschlüsselt.
 
 Für Hintergrundabrufe gibt es bewusst einen getrennten, nicht
 authentifizierungsgebundenen Keystore-Schlüssel. Er schützt nur Relay-URL,

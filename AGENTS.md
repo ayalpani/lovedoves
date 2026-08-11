@@ -21,7 +21,7 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
 
 ## Security invariants
 
-- Never persist message text, decoded photos, unencrypted videos, vault keys,
+- Never persist message text, decoded photos, unencrypted videos or audio, vault keys,
   capabilities, push tokens, or pairing payloads in logs, screenshots,
   temporary files, backups, crash reports, or fixtures.
 - Keep Android backup disabled and keep sensitive screens behind `FLAG_SECURE`.
@@ -83,5 +83,7 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   background.
 - Keep video plaintext in anonymous RAM-backed file descriptors only. Strip container metadata,
   encrypt the video and its thumbnail separately, and enforce the shared 20 MiB object limit.
+- Keep voice-message plaintext in anonymous RAM-backed file descriptors only, encode it as AAC in
+  MPEG-4, encrypt it before durable storage, and enforce the shared 20 MiB object limit.
 - Keep the red recording-stop square visibly inset inside the circular capture ring; it must
   never reach or protrude through that ring.
