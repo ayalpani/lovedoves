@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -17,12 +18,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -305,21 +303,12 @@ internal fun LoveDovesApp(
     }
 
     val error = localError ?: controllerError
-    if (error != null) {
-        AlertDialog(
-            onDismissRequest = {
-                localError = null
-                controller.clearError()
-            },
-            title = { Text("Das hat noch nicht geklappt") },
-            text = { Text(error) },
-            confirmButton = {
-                TextButton(onClick = {
-                    localError = null
-                    controller.clearError()
-                }) { Text("Okay") }
-            },
-        )
+    LaunchedEffect(error) {
+        if (error != null) {
+            Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+            localError = null
+            controller.clearError()
+        }
     }
 }
 

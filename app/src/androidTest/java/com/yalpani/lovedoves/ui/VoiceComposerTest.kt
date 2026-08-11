@@ -15,6 +15,8 @@ import androidx.compose.ui.test.down
 import androidx.compose.ui.test.moveBy
 import androidx.compose.ui.test.up
 import com.yalpani.lovedoves.LoveDovesTheme
+import java.util.concurrent.atomic.AtomicBoolean
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 
@@ -67,6 +69,49 @@ class VoiceComposerTest {
         composeRule.onNodeWithContentDescription("Aufnahme fortsetzen").assertExists()
         composeRule.onNodeWithContentDescription("Sprachnachricht senden").assertExists()
             .performClick()
+        composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen").assertExists()
+    }
+
+    @Test
+    fun shortHorizontalDragDoesNotCancel() {
+        val cancelled = AtomicBoolean(false)
+        composeRule.setContent {
+            var mode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
+            LoveDovesTheme {
+                MessageComposer(
+                    text = TextFieldValue(),
+                    busy = false,
+                    emojiPickerVisible = false,
+                    voiceMode = mode,
+                    voiceElapsedMillis = 1_800L,
+                    focusRequester = remember { FocusRequester() },
+                    onTextChange = {},
+                    onTextFocus = {},
+                    onEmoji = {},
+                    onAttachment = {},
+                    onSend = {},
+                    onVoiceStart = { mode = VoiceRecordingMode.HOLDING },
+                    onVoiceCancel = {
+                        cancelled.set(true)
+                        mode = VoiceRecordingMode.IDLE
+                    },
+                    onVoiceLock = { mode = VoiceRecordingMode.LOCKED },
+                    onVoiceRelease = { mode = VoiceRecordingMode.IDLE },
+                    onVoicePauseToggle = {},
+                    onVoiceSend = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
+            .performTouchInput {
+                down(center)
+                moveBy(Offset(-80f, 0f))
+                up()
+            }
+
+        composeRule.waitForIdle()
+        assertFalse(cancelled.get())
         composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen").assertExists()
     }
 }

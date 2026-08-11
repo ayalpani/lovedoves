@@ -1,8 +1,10 @@
 package com.yalpani.lovedoves.ui
 
 import android.content.Context
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
@@ -43,6 +45,7 @@ import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import com.yalpani.lovedoves.domain.PreparedVoice
 import java.io.Closeable
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 
 internal enum class VoiceGestureDecision { NONE, CANCEL, LOCK }
@@ -50,23 +53,36 @@ internal enum class VoiceGestureDecision { NONE, CANCEL, LOCK }
 internal fun voiceGestureDecision(
     deltaX: Float,
     deltaY: Float,
-    threshold: Float,
+    cancelThreshold: Float,
+    lockThreshold: Float,
 ): VoiceGestureDecision = when {
-    deltaX <= -threshold && -deltaX >= -deltaY -> VoiceGestureDecision.CANCEL
-    deltaY <= -threshold -> VoiceGestureDecision.LOCK
+    deltaX <= -cancelThreshold && abs(deltaX) >= abs(deltaY) -> VoiceGestureDecision.CANCEL
+    deltaY <= -lockThreshold && abs(deltaY) > abs(deltaX) -> VoiceGestureDecision.LOCK
     else -> VoiceGestureDecision.NONE
+}
+
+internal fun voiceCancelProgress(
+    deltaX: Float,
+    deltaY: Float,
+    cancelThreshold: Float,
+): Float = if (deltaX < 0f && abs(deltaX) >= abs(deltaY)) {
+    (-deltaX / cancelThreshold.coerceAtLeast(1f)).coerceIn(0f, 1f)
+} else {
+    0f
 }
 
 internal fun Modifier.voiceRecordGesture(
     enabled: Boolean,
-    thresholdPx: Float,
+    cancelThresholdPx: Float,
+    lockThresholdPx: Float,
     onStart: () -> Unit,
+    onCancelProgress: (Float) -> Unit,
     onCancel: () -> Unit,
     onLock: () -> Unit,
     onRelease: () -> Unit,
 ): Modifier = this
     .semantics { contentDescription = "Sprachnachricht aufnehmen" }
-    .pointerInput(enabled, thresholdPx) {
+    .pointerInput(enabled, cancelThresholdPx, lockThresholdPx) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
@@ -75,11 +91,21 @@ internal fun Modifier.voiceRecordGesture(
             while (!completed) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                val deltaX = change.position.x - down.position.x
+                val deltaY = change.position.y - down.position.y
+                onCancelProgress(
+                    voiceCancelProgress(
+                        deltaX = deltaX,
+                        deltaY = deltaY,
+                        cancelThreshold = cancelThresholdPx,
+                    ),
+                )
                 when (
                     voiceGestureDecision(
-                        deltaX = change.position.x - down.position.x,
-                        deltaY = change.position.y - down.position.y,
-                        threshold = thresholdPx,
+                        deltaX = deltaX,
+                        deltaY = deltaY,
+                        cancelThreshold = cancelThresholdPx,
+                        lockThreshold = lockThresholdPx,
                     )
                 ) {
                     VoiceGestureDecision.CANCEL -> {
@@ -99,6 +125,27 @@ internal fun Modifier.voiceRecordGesture(
             }
         }
     }
+
+/** Short native cues without introducing durable audio assets. */
+internal class RecordingCuePlayer : Closeable {
+    private val tones = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 35) }.getOrNull()
+
+    fun playStart() {
+        tones?.startTone(ToneGenerator.TONE_PROP_ACK, CUE_DURATION_MILLIS)
+    }
+
+    fun playStop() {
+        tones?.startTone(ToneGenerator.TONE_PROP_BEEP, CUE_DURATION_MILLIS)
+    }
+
+    override fun close() {
+        tones?.release()
+    }
+
+    private companion object {
+        const val CUE_DURATION_MILLIS = 70
+    }
+}
 
 /** MediaRecorder session whose encoded AAC data never receives a filesystem path. */
 internal class MemoryVoiceRecorder(

@@ -8,7 +8,12 @@ class VoiceMessageInteractionTest {
     fun horizontalDragCancels() {
         assertEquals(
             VoiceGestureDecision.CANCEL,
-            voiceGestureDecision(deltaX = -90f, deltaY = -20f, threshold = 78f),
+            voiceGestureDecision(
+                deltaX = -120f,
+                deltaY = -20f,
+                cancelThreshold = 108f,
+                lockThreshold = 78f,
+            ),
         )
     }
 
@@ -16,7 +21,12 @@ class VoiceMessageInteractionTest {
     fun verticalDragLocks() {
         assertEquals(
             VoiceGestureDecision.LOCK,
-            voiceGestureDecision(deltaX = -20f, deltaY = -90f, threshold = 78f),
+            voiceGestureDecision(
+                deltaX = -20f,
+                deltaY = -90f,
+                cancelThreshold = 108f,
+                lockThreshold = 78f,
+            ),
         )
     }
 
@@ -24,11 +34,21 @@ class VoiceMessageInteractionTest {
     fun diagonalDragUsesDominantDirection() {
         assertEquals(
             VoiceGestureDecision.LOCK,
-            voiceGestureDecision(deltaX = -80f, deltaY = -100f, threshold = 78f),
+            voiceGestureDecision(
+                deltaX = -80f,
+                deltaY = -100f,
+                cancelThreshold = 108f,
+                lockThreshold = 78f,
+            ),
         )
         assertEquals(
             VoiceGestureDecision.CANCEL,
-            voiceGestureDecision(deltaX = -100f, deltaY = -80f, threshold = 78f),
+            voiceGestureDecision(
+                deltaX = -120f,
+                deltaY = -80f,
+                cancelThreshold = 108f,
+                lockThreshold = 78f,
+            ),
         )
     }
 
@@ -36,8 +56,20 @@ class VoiceMessageInteractionTest {
     fun shortDragKeepsRecording() {
         assertEquals(
             VoiceGestureDecision.NONE,
-            voiceGestureDecision(deltaX = -77f, deltaY = -77f, threshold = 78f),
+            voiceGestureDecision(
+                deltaX = -107f,
+                deltaY = -20f,
+                cancelThreshold = 108f,
+                lockThreshold = 78f,
+            ),
         )
+    }
+
+    @Test
+    fun horizontalDragShowsProgressBeforeCancelling() {
+        assertEquals(0.5f, voiceCancelProgress(-54f, -10f, 108f))
+        assertEquals(1f, voiceCancelProgress(-140f, -10f, 108f))
+        assertEquals(0f, voiceCancelProgress(-20f, -60f, 108f))
     }
 
     @Test

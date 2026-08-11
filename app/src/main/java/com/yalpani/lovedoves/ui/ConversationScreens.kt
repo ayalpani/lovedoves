@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -67,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +85,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -151,18 +154,22 @@ internal fun ConversationScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val voiceRecorder = remember(context) { MemoryVoiceRecorder(context.applicationContext) }
+    val recordingCues = remember { RecordingCuePlayer() }
     var voiceMode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
     var voiceElapsedMillis by remember { mutableLongStateOf(0L) }
     var voicePermissionPending by remember { mutableStateOf(false) }
 
     fun cancelVoiceRecording() {
+        val wasRecording = voiceRecorder.isRecording
         voiceRecorder.cancel()
+        if (wasRecording) recordingCues.playStop()
         voiceMode = VoiceRecordingMode.IDLE
         voiceElapsedMillis = 0L
     }
 
     fun startVoiceRecording(mode: VoiceRecordingMode) {
         if (voiceRecorder.isRecording || busy) return
+        recordingCues.playStart()
         runCatching { voiceRecorder.start() }
             .onSuccess {
                 voiceElapsedMillis = 0L
@@ -176,7 +183,9 @@ internal fun ConversationScreen(
 
     fun finishVoiceRecording() {
         if (!voiceRecorder.isRecording) return
-        runCatching { voiceRecorder.finish() }
+        val result = runCatching { voiceRecorder.finish() }
+        recordingCues.playStop()
+        result
             .onSuccess(onSendVoice)
             .onFailure { onError(it.message ?: "Die Sprachaufnahme konnte nicht gespeichert werden.") }
         voiceMode = VoiceRecordingMode.IDLE
@@ -195,8 +204,11 @@ internal fun ConversationScreen(
             onError("Für Sprachnachrichten braucht Love Doves Zugriff auf das Mikrofon.")
         }
     }
-    DisposableEffect(voiceRecorder) {
-        onDispose(voiceRecorder::close)
+    DisposableEffect(voiceRecorder, recordingCues) {
+        onDispose {
+            voiceRecorder.close()
+            recordingCues.close()
+        }
     }
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -596,8 +608,21 @@ internal fun MessageComposer(
 ) {
     val canSend = text.text.isNotBlank() && !busy
     val recording = voiceMode != VoiceRecordingMode.IDLE
+    var composerWidthPx by remember { mutableIntStateOf(0) }
+    var cancelProgress by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val fallbackWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val cancelThresholdPx = (composerWidthPx.takeIf { it > 0 }?.toFloat() ?: fallbackWidthPx) *
+        VOICE_CANCEL_WIDTH_FRACTION
+    val lockThresholdPx = with(density) { VOICE_LOCK_GESTURE_THRESHOLD.toPx() }
+    LaunchedEffect(voiceMode) {
+        if (voiceMode != VoiceRecordingMode.HOLDING) cancelProgress = 0f
+    }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .onSizeChanged { composerWidthPx = it.width }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -608,73 +633,93 @@ internal fun MessageComposer(
                 color = Color.White,
                 border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
             ) {
-                Row(
-                    Modifier.defaultMinSize(minHeight = 48.dp).padding(horizontal = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
-                        onClick = onEmoji,
-                        enabled = !busy && !recording,
-                        modifier = Modifier.size(44.dp),
+                Box(Modifier.defaultMinSize(minHeight = 48.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (emojiPickerVisible) {
-                            KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
-                        } else {
-                            SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                        IconButton(
+                            onClick = onEmoji,
+                            enabled = !busy && !recording,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            if (emojiPickerVisible) {
+                                KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
+                            } else {
+                                SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                            }
+                        }
+                        BasicTextField(
+                            value = text,
+                            onValueChange = { if (!recording) onTextChange(it) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { if (it.isFocused) onTextFocus() }
+                                .padding(horizontal = 4.dp, vertical = 12.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
+                            cursorBrush = SolidColor(LoveInk),
+                            keyboardOptions = KeyboardOptions(
+                                showKeyboardOnFocus = !emojiPickerVisible,
+                            ),
+                            maxLines = 5,
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (text.text.isEmpty()) {
+                                        Text(
+                                            "Etwas nur für euch …",
+                                            color = LoveInk.copy(alpha = 0.5f),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                        )
+                        IconButton(
+                            onClick = onAttachment,
+                            enabled = !busy && !recording,
+                            modifier = Modifier.size(44.dp),
+                        ) {
+                            PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
                         }
                     }
-                    BasicTextField(
-                        value = text,
-                        onValueChange = { if (!recording) onTextChange(it) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(focusRequester)
-                            .onFocusChanged { if (it.isFocused) onTextFocus() }
-                            .padding(horizontal = 4.dp, vertical = 12.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = LoveInk),
-                        cursorBrush = SolidColor(LoveInk),
-                        keyboardOptions = KeyboardOptions(showKeyboardOnFocus = !emojiPickerVisible),
-                        maxLines = 5,
-                        decorationBox = { innerTextField ->
-                            Box {
-                                if (text.text.isEmpty()) {
-                                    Text(
-                                        "Etwas nur für euch …",
-                                        color = LoveInk.copy(alpha = 0.5f),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
-                    )
-                    IconButton(
-                        onClick = onAttachment,
-                        enabled = !busy && !recording,
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
+                    if (recording) {
+                        VoiceRecordingBar(
+                            mode = voiceMode,
+                            elapsedMillis = voiceElapsedMillis,
+                            cancelProgress = cancelProgress,
+                            onCancel = onVoiceCancel,
+                            modifier = Modifier.matchParentSize(),
+                        )
                     }
                 }
-            }
-            if (recording) {
-                VoiceRecordingBar(
-                    mode = voiceMode,
-                    elapsedMillis = voiceElapsedMillis,
-                    onCancel = onVoiceCancel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
         ComposerVoiceAction(
             mode = voiceMode,
             canSendText = canSend,
             enabled = !busy,
+            cancelThresholdPx = cancelThresholdPx,
+            lockThresholdPx = lockThresholdPx,
             onSendText = onSend,
-            onVoiceStart = onVoiceStart,
-            onVoiceCancel = onVoiceCancel,
-            onVoiceLock = onVoiceLock,
-            onVoiceRelease = onVoiceRelease,
+            onVoiceStart = {
+                cancelProgress = 0f
+                onVoiceStart()
+            },
+            onCancelProgress = { cancelProgress = it },
+            onVoiceCancel = {
+                cancelProgress = 0f
+                onVoiceCancel()
+            },
+            onVoiceLock = {
+                cancelProgress = 0f
+                onVoiceLock()
+            },
+            onVoiceRelease = {
+                cancelProgress = 0f
+                onVoiceRelease()
+            },
             onPauseToggle = onVoicePauseToggle,
             onSendVoice = onVoiceSend,
         )
@@ -685,6 +730,7 @@ internal fun MessageComposer(
 private fun VoiceRecordingBar(
     mode: VoiceRecordingMode,
     elapsedMillis: Long,
+    cancelProgress: Float,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -694,41 +740,39 @@ private fun VoiceRecordingBar(
         animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
         label = "recording dot",
     )
-    Surface(
-        modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = Color.White,
-        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
+    Row(
+        modifier = modifier
+            .height(48.dp)
+            .background(Color.White)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .background(Color(0xFFD94C4C).copy(alpha = pulse), CircleShape),
-            )
+        Box(
+            Modifier
+                .size(10.dp)
+                .background(Color(0xFFD94C4C).copy(alpha = pulse), CircleShape),
+        )
+        Text(
+            formatVoiceRecordingDuration(elapsedMillis),
+            color = LoveInk.copy(alpha = 0.62f),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        if (mode == VoiceRecordingMode.HOLDING) {
             Text(
-                formatVoiceRecordingDuration(elapsedMillis),
-                color = LoveInk.copy(alpha = 0.62f),
-                style = MaterialTheme.typography.bodyLarge,
+                "Nach links zum Verwerfen",
+                modifier = Modifier
+                    .weight(1f)
+                    .offset(x = (-24).dp * cancelProgress),
+                color = LoveInk.copy(alpha = 0.5f + (cancelProgress * 0.25f)),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (mode == VoiceRecordingMode.HOLDING) {
-                Text(
-                    "Nach links verwerfen",
-                    modifier = Modifier.weight(1f),
-                    color = LoveInk.copy(alpha = 0.5f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                    Text("Abbrechen")
-                }
+        } else {
+            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                Text("Abbrechen")
             }
         }
     }
@@ -739,8 +783,11 @@ private fun ComposerVoiceAction(
     mode: VoiceRecordingMode,
     canSendText: Boolean,
     enabled: Boolean,
+    cancelThresholdPx: Float,
+    lockThresholdPx: Float,
     onSendText: () -> Unit,
     onVoiceStart: () -> Unit,
+    onCancelProgress: (Float) -> Unit,
     onVoiceCancel: () -> Unit,
     onVoiceLock: () -> Unit,
     onVoiceRelease: () -> Unit,
@@ -749,7 +796,6 @@ private fun ComposerVoiceAction(
 ) {
     val recording = mode != VoiceRecordingMode.IDLE
     val locked = mode == VoiceRecordingMode.LOCKED || mode == VoiceRecordingMode.PAUSED
-    val thresholdPx = with(LocalDensity.current) { VOICE_GESTURE_THRESHOLD.toPx() }
     val pulse by rememberInfiniteTransition(label = "microphone pulse").animateFloat(
         initialValue = 0.72f,
         targetValue = 1f,
@@ -759,7 +805,7 @@ private fun ComposerVoiceAction(
     Box(
         modifier = Modifier
             .width(60.dp)
-            .height(if (recording) 84.dp else 48.dp),
+            .height(if (recording) 104.dp else 48.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         if (recording) {
@@ -802,8 +848,10 @@ private fun ComposerVoiceAction(
                 if (!canSendText && !locked) {
                     Modifier.voiceRecordGesture(
                         enabled = enabled,
-                        thresholdPx = thresholdPx,
+                        cancelThresholdPx = cancelThresholdPx,
+                        lockThresholdPx = lockThresholdPx,
                         onStart = onVoiceStart,
+                        onCancelProgress = onCancelProgress,
                         onCancel = onVoiceCancel,
                         onLock = onVoiceLock,
                         onRelease = onVoiceRelease,
@@ -851,7 +899,8 @@ internal enum class VoiceRecordingMode { IDLE, HOLDING, LOCKED, PAUSED }
 private const val INPUT_SETTLE_MILLIS = 120L
 private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
-private val VOICE_GESTURE_THRESHOLD = 78.dp
+private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
+private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
 
 internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val clamped = durationMillis.coerceAtLeast(0L)
