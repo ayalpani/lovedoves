@@ -64,8 +64,11 @@ class VoiceComposerTest {
             }
         }
 
-        val idleHeight = composeRule.onNodeWithTag("composer host")
-            .fetchSemanticsNode().boundsInRoot.height
+        val idleHostBounds = composeRule.onNodeWithTag("composer host")
+            .fetchSemanticsNode().boundsInRoot
+        val idleActionBounds = composeRule
+            .onNodeWithContentDescription("Sprachnachricht aufnehmen")
+            .fetchSemanticsNode().boundsInRoot
 
         composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
             .performTouchInput {
@@ -76,9 +79,14 @@ class VoiceComposerTest {
 
         val pauseAction = composeRule.onNodeWithContentDescription("Aufnahme pausieren")
         pauseAction.assertExists()
-        val lockedHeight = composeRule.onNodeWithTag("composer host")
-            .fetchSemanticsNode().boundsInRoot.height
-        assertEquals(idleHeight, lockedHeight, 0f)
+        val lockedHostBounds = composeRule.onNodeWithTag("composer host")
+            .fetchSemanticsNode().boundsInRoot
+        val lockedActionBounds = composeRule
+            .onNodeWithContentDescription("Sprachnachricht senden")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(idleHostBounds.height, lockedHostBounds.height, 0f)
+        assertEquals(idleActionBounds.width, lockedActionBounds.width, 0f)
+        assertEquals(idleActionBounds.height, lockedActionBounds.height, 0f)
         pauseAction.performClick()
         composeRule.onNodeWithContentDescription("Aufnahme fortsetzen").assertExists()
         composeRule.onNodeWithContentDescription("Sprachnachricht senden").assertExists()

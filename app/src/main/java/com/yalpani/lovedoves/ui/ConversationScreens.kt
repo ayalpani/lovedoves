@@ -314,9 +314,6 @@ internal fun ConversationScreen(
             onAttachment()
         }
     }
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-    }
     fun toggleSelection(messageId: String) {
         selectedMessageIds = if (messageId in selectedMessageIds) {
             selectedMessageIds - messageId
@@ -424,9 +421,10 @@ internal fun ConversationScreen(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                reverseLayout = true,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(messages, key = { it.id }) { message ->
+                items(messages.asReversed(), key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
                         photoBitmaps = photoBitmaps,
@@ -800,8 +798,8 @@ private fun ComposerVoiceAction(
     val recording = mode != VoiceRecordingMode.IDLE
     val locked = mode == VoiceRecordingMode.LOCKED || mode == VoiceRecordingMode.PAUSED
     val pulse by rememberInfiniteTransition(label = "microphone pulse").animateFloat(
-        initialValue = 0.72f,
-        targetValue = 1f,
+        initialValue = 0.12f,
+        targetValue = 0.3f,
         animationSpec = infiniteRepeatable(tween(650), repeatMode = RepeatMode.Reverse),
         label = "microphone background",
     )
@@ -809,7 +807,7 @@ private fun ComposerVoiceAction(
         modifier = Modifier
             .width(60.dp)
             .height(48.dp),
-        contentAlignment = Alignment.BottomCenter,
+        contentAlignment = Alignment.Center,
     ) {
         if (recording) {
             val lockOffset = with(LocalDensity.current) {
@@ -857,11 +855,18 @@ private fun ComposerVoiceAction(
                 }
             }
         }
+        if (recording) {
+            Box(
+                Modifier
+                    .size(60.dp)
+                    .background(LoveInk.copy(alpha = pulse), CircleShape),
+            )
+        }
         val actionModifier = Modifier
-            .size(if (recording) 60.dp else 48.dp)
+            .size(48.dp)
             .background(
                 when {
-                    recording -> LoveInk.copy(alpha = pulse)
+                    recording -> LoveInk
                     canSendText -> LoveInk
                     enabled -> LoveInk
                     else -> LoveMist
@@ -891,13 +896,13 @@ private fun ComposerVoiceAction(
             if (canSendText || locked) {
                 SendHorizontalIcon(
                     if (locked) "Sprachnachricht senden" else "Nachricht senden",
-                    modifier = Modifier.size(if (recording) 25.dp else 20.dp),
+                    modifier = Modifier.size(20.dp),
                     color = Color.White,
                 )
             } else {
                 MicrophoneIcon(
                     null,
-                    modifier = Modifier.size(if (recording) 26.dp else 22.dp),
+                    modifier = Modifier.size(22.dp),
                     color = if (enabled) Color.White else LoveInk.copy(alpha = 0.35f),
                 )
             }
@@ -925,7 +930,7 @@ private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
-private val VOICE_LOCK_OVERLAY_OFFSET = 56.dp
+private val VOICE_LOCK_OVERLAY_OFFSET = 44.dp
 
 internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val clamped = durationMillis.coerceAtLeast(0L)
