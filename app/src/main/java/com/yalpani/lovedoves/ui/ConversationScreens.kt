@@ -78,6 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -104,6 +105,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
@@ -805,30 +808,51 @@ private fun ComposerVoiceAction(
     Box(
         modifier = Modifier
             .width(60.dp)
-            .height(if (recording) 104.dp else 48.dp),
+            .height(48.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         if (recording) {
-            Surface(
-                modifier = Modifier.size(36.dp).align(Alignment.TopCenter),
-                shape = CircleShape,
-                color = Color.White,
-                border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
+            val lockOffset = with(LocalDensity.current) {
+                IntOffset(0, -VOICE_LOCK_OVERLAY_OFFSET.roundToPx())
+            }
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = lockOffset,
+                properties = PopupProperties(
+                    focusable = false,
+                    dismissOnBackPress = false,
+                    dismissOnClickOutside = false,
+                    clippingEnabled = false,
+                ),
             ) {
-                Box(
-                    modifier = if (locked) Modifier.clickable(onClick = onPauseToggle) else Modifier,
-                    contentAlignment = Alignment.Center,
+                Surface(
+                    modifier = Modifier.size(36.dp),
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
                 ) {
-                    when (mode) {
-                        VoiceRecordingMode.PAUSED -> PlayIcon(
-                            "Aufnahme fortsetzen",
-                            Modifier.size(18.dp),
-                        )
-                        VoiceRecordingMode.LOCKED -> PauseIcon(
-                            "Aufnahme pausieren",
-                            Modifier.size(18.dp),
-                        )
-                        else -> LockIcon("Nach oben ziehen zum Verriegeln", Modifier.size(18.dp))
+                    Box(
+                        modifier = if (locked) {
+                            Modifier.clickable(onClick = onPauseToggle)
+                        } else {
+                            Modifier
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        when (mode) {
+                            VoiceRecordingMode.PAUSED -> PlayIcon(
+                                "Aufnahme fortsetzen",
+                                Modifier.size(18.dp),
+                            )
+                            VoiceRecordingMode.LOCKED -> PauseIcon(
+                                "Aufnahme pausieren",
+                                Modifier.size(18.dp),
+                            )
+                            else -> LockIcon(
+                                "Nach oben ziehen zum Verriegeln",
+                                Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -901,6 +925,7 @@ private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
+private val VOICE_LOCK_OVERLAY_OFFSET = 56.dp
 
 internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val clamped = durationMillis.coerceAtLeast(0L)
