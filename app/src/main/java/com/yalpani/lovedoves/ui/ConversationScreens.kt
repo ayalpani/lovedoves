@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -761,11 +760,9 @@ private fun VoiceRecordingBar(
         )
         if (mode == VoiceRecordingMode.HOLDING) {
             Text(
-                "Nach links zum Verwerfen",
-                modifier = Modifier
-                    .weight(1f)
-                    .offset(x = (-24).dp * cancelProgress),
-                color = LoveInk.copy(alpha = 0.5f + (cancelProgress * 0.25f)),
+                "← Verwerfen",
+                modifier = Modifier.weight(1f),
+                color = LoveInk.copy(alpha = 0.62f * (1f - cancelProgress)),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -798,8 +795,8 @@ private fun ComposerVoiceAction(
     val recording = mode != VoiceRecordingMode.IDLE
     val locked = mode == VoiceRecordingMode.LOCKED || mode == VoiceRecordingMode.PAUSED
     val pulse by rememberInfiniteTransition(label = "microphone pulse").animateFloat(
-        initialValue = 0.12f,
-        targetValue = 0.3f,
+        initialValue = 0.78f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(650), repeatMode = RepeatMode.Reverse),
         label = "microphone background",
     )
@@ -855,18 +852,11 @@ private fun ComposerVoiceAction(
                 }
             }
         }
-        if (recording) {
-            Box(
-                Modifier
-                    .size(60.dp)
-                    .background(LoveInk.copy(alpha = pulse), CircleShape),
-            )
-        }
         val actionModifier = Modifier
             .size(48.dp)
             .background(
                 when {
-                    recording -> LoveInk
+                    recording -> LoveInk.copy(alpha = pulse)
                     canSendText -> LoveInk
                     enabled -> LoveInk
                     else -> LoveMist
