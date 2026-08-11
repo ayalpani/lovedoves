@@ -77,6 +77,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -759,15 +760,27 @@ private fun VoiceRecordingBar(
             style = MaterialTheme.typography.bodyLarge,
         )
         if (mode == VoiceRecordingMode.HOLDING) {
-            Text(
-                "← Verwerfen",
-                modifier = Modifier.weight(1f),
-                color = LoveInk.copy(alpha = 0.62f * (1f - cancelProgress)),
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val hintColor = LoveInk.copy(alpha = 0.62f * (1f - cancelProgress))
+            Row(
+                modifier = Modifier.weight(1f).clipToBounds(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(
+                    3.dp,
+                    Alignment.CenterHorizontally,
+                ),
+            ) {
+                ChevronLeftIcon(
+                    modifier = Modifier.size(16.dp),
+                    color = hintColor,
+                )
+                Text(
+                    "Verwerfen",
+                    color = hintColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         } else {
             TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
                 Text("Abbrechen")

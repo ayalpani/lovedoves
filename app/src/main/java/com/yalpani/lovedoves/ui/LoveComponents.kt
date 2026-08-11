@@ -463,9 +463,15 @@ internal fun RefreshIcon(description: String? = null) = LoveIcon(
 )
 
 @Composable
-internal fun ChevronLeftIcon(description: String? = null) = LoveIcon(
+internal fun ChevronLeftIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
     listOf("m15 18-6-6 6-6"),
     description,
+    modifier,
+    color,
     strokeWidth = 3f,
 )
 
