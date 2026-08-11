@@ -238,13 +238,19 @@ internal fun ConversationScreen(
     val emojiSearchImeVisible =
         showEmojiPicker && inputTransition == ComposerInputTransition.NONE && imeHeightPx > 0
     val listState = rememberLazyListState()
+    var initialMessagesPositioned by remember { mutableStateOf(false) }
     val newestMessage = messages.lastOrNull()
     LaunchedEffect(newestMessage?.id) {
         if (
             newestMessage != null &&
             shouldPinNewestMessage(newestMessage.outgoing, listState.firstVisibleItemIndex)
         ) {
-            listState.requestScrollToItem(0)
+            if (initialMessagesPositioned) {
+                listState.animateScrollToItem(0)
+            } else {
+                listState.requestScrollToItem(0)
+                initialMessagesPositioned = true
+            }
         }
     }
     val unreadIncomingIds = messages
@@ -782,45 +788,57 @@ private fun VoiceRecordingBar(
         modifier = modifier
             .height(48.dp)
             .background(Color.White)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
-            Modifier
-                .size(10.dp)
-                .background(Color(0xFFD94C4C).copy(alpha = pulse), CircleShape),
-        )
-        Text(
-            formatVoiceRecordingDuration(elapsedMillis),
-            color = LoveInk.copy(alpha = 0.62f),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        if (mode == VoiceRecordingMode.HOLDING) {
-            val hintColor = LoveInk.copy(alpha = 0.62f * (1f - cancelProgress))
-            Row(
-                modifier = Modifier.weight(1f).clipToBounds(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(
-                    3.dp,
-                    Alignment.CenterHorizontally,
-                ),
-            ) {
-                ChevronLeftIcon(
-                    modifier = Modifier.size(16.dp),
-                    color = hintColor,
-                )
-                Text(
-                    "Verwerfen",
-                    color = hintColor,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        } else {
-            TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                Text("Abbrechen")
+            modifier = Modifier.size(44.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .background(Color(0xFFD94C4C).copy(alpha = pulse), CircleShape),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 4.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                formatVoiceRecordingDuration(elapsedMillis),
+                color = LoveInk.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            if (mode == VoiceRecordingMode.HOLDING) {
+                val hintColor = LoveInk.copy(alpha = 0.62f * (1f - cancelProgress))
+                Row(
+                    modifier = Modifier.weight(1f).clipToBounds(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(
+                        3.dp,
+                        Alignment.CenterHorizontally,
+                    ),
+                ) {
+                    ChevronLeftIcon(
+                        modifier = Modifier.size(16.dp),
+                        color = hintColor,
+                    )
+                    Text(
+                        "Verwerfen",
+                        color = hintColor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else {
+                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                    Text("Abbrechen")
+                }
             }
         }
     }
