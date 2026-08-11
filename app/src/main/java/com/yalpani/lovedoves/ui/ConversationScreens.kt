@@ -1016,11 +1016,11 @@ private fun MessageText(message: ConversationEventEntity) {
                 ),
             )
             append(formatTime(message.createdAtEpochMillis))
-            pop()
             if (metadata.visual != null) {
                 append("\u00A0")
                 appendInlineContent(inlineId, metadata.description)
             }
+            pop()
         },
         inlineContent = if (metadata.visual == null) {
             emptyMap()
