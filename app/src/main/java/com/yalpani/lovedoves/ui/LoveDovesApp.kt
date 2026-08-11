@@ -87,6 +87,9 @@ internal fun LoveDovesApp(
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var mediaBusy by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
+    var chatBackground by remember(context) {
+        mutableStateOf(ChatBackgroundOption.load(context))
+    }
     val busy = controllerBusy || mediaBusy
 
     LaunchedEffect(pickedMedia) {
@@ -186,9 +189,11 @@ internal fun LoveDovesApp(
                         messages = state.messages,
                         photoBitmaps = photoBitmaps,
                         voiceBytes = controller::mediaBytes,
+                        chatBackground = chatBackground.color,
                         busy = busy,
                         onSend = controller::sendText,
                         onSendVoice = controller::sendVoice,
+                        onSendRoundVideo = controller::sendRoundVideo,
                         onAttachment = { overlay = Overlay.MediaCapture },
                         onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
@@ -270,6 +275,11 @@ internal fun LoveDovesApp(
                         is Overlay.Settings -> SettingsScreen(
                             pair = destination.pair,
                             busy = busy,
+                            chatBackground = chatBackground,
+                            onChatBackground = {
+                                chatBackground = it
+                                it.persist(context)
+                            },
                             onBack = { overlay = null },
                             onRecovery = { mode ->
                                 onAuthenticate {

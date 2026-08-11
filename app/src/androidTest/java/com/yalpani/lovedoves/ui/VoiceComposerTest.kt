@@ -30,6 +30,45 @@ class VoiceComposerTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun quickTapSwitchesFromVoiceToRoundVideo() {
+        composeRule.setContent {
+            var captureType by remember { mutableStateOf(ComposerCaptureType.VOICE) }
+            LoveDovesTheme {
+                MessageComposer(
+                    text = TextFieldValue(),
+                    busy = false,
+                    emojiPickerVisible = false,
+                    captureType = captureType,
+                    voiceMode = VoiceRecordingMode.IDLE,
+                    voiceElapsedMillis = 0L,
+                    focusRequester = remember { FocusRequester() },
+                    onTextChange = {},
+                    onTextFocus = {},
+                    onEmoji = {},
+                    onAttachment = {},
+                    onSend = {},
+                    onCaptureTap = { captureType = ComposerCaptureType.ROUND_VIDEO },
+                    onVoiceStart = {},
+                    onVoiceCancel = {},
+                    onVoiceLock = {},
+                    onVoiceRelease = {},
+                    onVoicePauseToggle = {},
+                    onVoiceSend = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
+            .performTouchInput {
+                down(center)
+                advanceEventTime(200L)
+                up()
+            }
+
+        composeRule.onNodeWithContentDescription("Rundes Video aufnehmen").assertExists()
+    }
+
+    @Test
     fun upwardDragLocksAndExposesPauseAndSend() {
         composeRule.setContent {
             var mode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
@@ -39,6 +78,7 @@ class VoiceComposerTest {
                         text = TextFieldValue(),
                         busy = false,
                         emojiPickerVisible = false,
+                        captureType = ComposerCaptureType.VOICE,
                         voiceMode = mode,
                         voiceElapsedMillis = 1_800L,
                         focusRequester = remember { FocusRequester() },
@@ -47,6 +87,7 @@ class VoiceComposerTest {
                         onEmoji = {},
                         onAttachment = {},
                         onSend = {},
+                        onCaptureTap = {},
                         onVoiceStart = { mode = VoiceRecordingMode.HOLDING },
                         onVoiceCancel = { mode = VoiceRecordingMode.IDLE },
                         onVoiceLock = { mode = VoiceRecordingMode.LOCKED },
@@ -73,6 +114,7 @@ class VoiceComposerTest {
         composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
             .performTouchInput {
                 down(center)
+                advanceEventTime(1_001L)
                 moveBy(Offset(0f, -320f))
                 up()
             }
@@ -104,6 +146,7 @@ class VoiceComposerTest {
                     text = TextFieldValue(),
                     busy = false,
                     emojiPickerVisible = false,
+                    captureType = ComposerCaptureType.VOICE,
                     voiceMode = mode,
                     voiceElapsedMillis = 1_800L,
                     focusRequester = remember { FocusRequester() },
@@ -112,6 +155,7 @@ class VoiceComposerTest {
                     onEmoji = {},
                     onAttachment = {},
                     onSend = {},
+                    onCaptureTap = {},
                     onVoiceStart = { mode = VoiceRecordingMode.HOLDING },
                     onVoiceCancel = {
                         cancelled.set(true)

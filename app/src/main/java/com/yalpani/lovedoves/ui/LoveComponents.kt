@@ -375,6 +375,7 @@ internal fun PaperclipIcon(
 internal fun VideoIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
 ) = LoveIcon(
     listOf(
         "m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5",
@@ -382,6 +383,7 @@ internal fun VideoIcon(
     ),
     description,
     modifier,
+    color,
 )
 
 @Composable
@@ -424,12 +426,16 @@ internal fun SendHorizontalIcon(
 )
 
 @Composable
-internal fun SettingsIcon(description: String? = null) = LoveIcon(
+internal fun SettingsIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
     listOf(
         "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
         "M15 12A3 3 0 0 1 12 15 3 3 0 0 1 9 12 3 3 0 0 1 15 12Z",
     ),
     description,
+    modifier,
 )
 
 @Composable

@@ -47,6 +47,7 @@ import com.yalpani.lovedoves.domain.PreparedVoice
 import java.io.Closeable
 import kotlin.math.abs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class VoiceGestureDecision { NONE, CANCEL, LOCK }
 
@@ -73,24 +74,54 @@ internal fun voiceCancelProgress(
 
 internal fun Modifier.voiceRecordGesture(
     enabled: Boolean,
+    contentDescription: String,
+    tapThresholdMillis: Long,
     cancelThresholdPx: Float,
     lockThresholdPx: Float,
+    onTap: () -> Unit,
     onStart: () -> Unit,
     onCancelProgress: (Float) -> Unit,
     onCancel: () -> Unit,
     onLock: () -> Unit,
     onRelease: () -> Unit,
 ): Modifier = this
-    .semantics { contentDescription = "Sprachnachricht aufnehmen" }
-    .pointerInput(enabled, cancelThresholdPx, lockThresholdPx) {
+    .semantics { this.contentDescription = contentDescription }
+    .pointerInput(enabled, tapThresholdMillis, cancelThresholdPx, lockThresholdPx) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
-            onStart()
+            val downRealtime = SystemClock.uptimeMillis()
+            var started = false
             var completed = false
             while (!completed) {
-                val event = awaitPointerEvent()
+                val remaining = tapThresholdMillis - (SystemClock.uptimeMillis() - downRealtime)
+                if (!started && remaining <= 0L) {
+                    onStart()
+                    started = true
+                    continue
+                }
+                val event = if (!started) {
+                    withTimeoutOrNull(remaining) { awaitPointerEvent() }
+                } else awaitPointerEvent()
+                if (event == null) {
+                    onStart()
+                    started = true
+                    continue
+                }
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (
+                    !started &&
+                    change.uptimeMillis - down.uptimeMillis >= tapThresholdMillis
+                ) {
+                    onStart()
+                    started = true
+                }
+                if (!started && !change.pressed) {
+                    onTap()
+                    change.consume()
+                    break
+                }
+                if (!started) continue
                 val deltaX = change.position.x - down.position.x
                 val deltaY = change.position.y - down.position.y
                 onCancelProgress(

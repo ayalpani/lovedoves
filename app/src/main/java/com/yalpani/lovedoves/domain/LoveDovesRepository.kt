@@ -482,7 +482,7 @@ internal class LoveDovesRepository(
         encrypted.key.fill(0)
     }
 
-    suspend fun sendVideo(video: PreparedVideo) = io {
+    suspend fun sendVideo(video: PreparedVideo, round: Boolean = false) = io {
         require(video.mp4.size <= MAX_VIDEO_BYTES)
         require(video.thumbnailJpeg.size <= MAX_PHOTO_BYTES)
         var encryptedVideo: EncryptedMedia? = null
@@ -514,7 +514,7 @@ internal class LoveDovesRepository(
                     ConversationEventEntity(
                         id,
                         true,
-                        KIND_VIDEO,
+                        if (round) KIND_ROUND_VIDEO else KIND_VIDEO,
                         null,
                         encryptedVideo.id,
                         now,
@@ -535,7 +535,8 @@ internal class LoveDovesRepository(
                         .setDurationMs(video.durationMillis)
                         .setThumbnail(encryptedThumbnail.toProtocolMedia("image/jpeg"))
                         .setThumbnailWidth(video.thumbnailWidth)
-                        .setThumbnailHeight(video.thumbnailHeight),
+                        .setThumbnailHeight(video.thumbnailHeight)
+                        .setRound(round),
                 )
                 .build()
             enqueueAndUpload(id, id, event)
@@ -897,7 +898,7 @@ internal class LoveDovesRepository(
                             ConversationEventEntity(
                                 event.eventId,
                                 false,
-                                KIND_VIDEO,
+                                if (event.video.round) KIND_ROUND_VIDEO else KIND_VIDEO,
                                 null,
                                 video.id,
                                 event.createdAtEpochMs,
@@ -1093,7 +1094,7 @@ internal class LoveDovesRepository(
                                         ConversationEventEntity(
                                             archived.eventId,
                                             record.outgoingOnRecoveringDevice,
-                                            KIND_VIDEO,
+                                            if (archived.video.round) KIND_ROUND_VIDEO else KIND_VIDEO,
                                             null,
                                             video.id,
                                             archived.createdAtEpochMs,
@@ -1348,7 +1349,7 @@ internal class LoveDovesRepository(
                         .setSha256(ByteString.copyFrom(media.cipherSha256)),
                 ).build()
             }
-            KIND_VIDEO -> {
+            KIND_VIDEO, KIND_ROUND_VIDEO -> {
                 val media = requireNotNull(database.mediaDao().get(requireNotNull(mediaId)))
                 val thumbnail = requireNotNull(
                     media.thumbnailMediaId?.let(database.mediaDao()::get),
@@ -1361,7 +1362,8 @@ internal class LoveDovesRepository(
                         .setDurationMs(media.durationMillis)
                         .setThumbnail(thumbnail.toProtocolMedia())
                         .setThumbnailWidth(thumbnail.width)
-                        .setThumbnailHeight(thumbnail.height),
+                        .setThumbnailHeight(thumbnail.height)
+                        .setRound(kind == KIND_ROUND_VIDEO),
                 ).build()
             }
             KIND_VOICE -> {
@@ -1665,6 +1667,7 @@ internal class LoveDovesRepository(
         const val KIND_TEXT = "TEXT"
         const val KIND_PHOTO = "PHOTO"
         const val KIND_VIDEO = "VIDEO"
+        const val KIND_ROUND_VIDEO = "ROUND_VIDEO"
         const val KIND_VOICE = "VOICE"
         const val DELIVERY_SENDING = "SENDING"
         const val DELIVERY_SENT = "SENT"

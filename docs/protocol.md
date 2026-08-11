@@ -24,6 +24,8 @@ Ein Video verwendet `VideoMessageV1` und zwei getrennte `EncryptedMediaV1`-
 Objekte: das Video und sein Vorschaubild. Dauer und Abmessungen liegen im
 Signal-geschützten Ereignis. Beide Relay-Objekte besitzen unabhängige Schlüssel,
 Nonces und Prüfsummen.
+`round` kennzeichnet ein mit der Selfie-Kamera aufgenommenes Kreisvideo. Ältere
+Clients ignorieren das additive Feld und zeigen dasselbe Medium rechteckig an.
 
 Eine Sprachnachricht verwendet `VoiceMessageV1` mit einem `audio/mp4`-
 `EncryptedMediaV1` und ihrer Dauer. Die AAC-Aufnahme wird vor Ablage und

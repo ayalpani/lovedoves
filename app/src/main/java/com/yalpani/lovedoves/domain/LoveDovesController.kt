@@ -106,6 +106,14 @@ internal class LoveDovesController(
         action { repository.sendVideo(video) }
     }
 
+    fun sendRoundVideo(video: PreparedVideo) {
+        if (mutableBusy.value) {
+            video.clear()
+            return
+        }
+        action { repository.sendVideo(video, round = true) }
+    }
+
     fun sendVoice(voice: PreparedVoice) {
         if (mutableBusy.value) {
             voice.clear()

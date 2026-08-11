@@ -25,7 +25,7 @@ Verschlüsselung und serverseitig keine lesbaren Inhalte.
 ## MVP-Grenze
 
 Der erste Release enthält ausschließlich Kopplung, Text, ein Foto, kurzes
-Video oder eine Sprachnachricht pro Nachricht, Zustellstatus, erneutes Senden,
+Video, rundes Selfie-Video oder eine Sprachnachricht pro Nachricht, Zustellstatus, erneutes Senden,
 Sicherheitseinstellungen, lokale Mehrfachauswahl mit Kopieren/Löschen, eine
 swipebare Medienansicht und partnergestützte Wiederherstellung. Reaktionen,
 Gruppen, GIFs, Ausflüge, Kalender und gemeinsame Planung gehören nicht in das

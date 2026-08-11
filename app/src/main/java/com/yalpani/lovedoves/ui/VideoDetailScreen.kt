@@ -61,7 +61,8 @@ internal fun MediaDetailScreen(
     val mediaMessages = remember(messages) {
         messages.filter {
             it.kind == LoveDovesRepository.KIND_PHOTO ||
-                it.kind == LoveDovesRepository.KIND_VIDEO
+                it.kind == LoveDovesRepository.KIND_VIDEO ||
+                it.kind == LoveDovesRepository.KIND_ROUND_VIDEO
         }
     }
     if (mediaMessages.isEmpty()) return

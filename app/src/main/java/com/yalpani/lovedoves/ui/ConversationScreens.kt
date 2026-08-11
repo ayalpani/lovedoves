@@ -102,6 +102,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -116,6 +117,7 @@ import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.data.PairStateEntity
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import com.yalpani.lovedoves.domain.PairingMode
+import com.yalpani.lovedoves.domain.PreparedVideo
 import com.yalpani.lovedoves.domain.PreparedVoice
 import java.time.Instant
 import java.time.ZoneId
@@ -132,9 +134,11 @@ internal fun ConversationScreen(
     messages: List<ConversationEventEntity>,
     photoBitmaps: PhotoBitmapLoader,
     voiceBytes: suspend (String) -> ByteArray,
+    chatBackground: Color,
     busy: Boolean,
     onSend: (String) -> Unit,
     onSendVoice: (PreparedVoice) -> Unit,
+    onSendRoundVideo: (PreparedVideo) -> Unit,
     onAttachment: () -> Unit,
     onSettings: () -> Unit,
     onRetry: (String) -> Unit,
@@ -158,10 +162,16 @@ internal fun ConversationScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val voiceRecorder = remember(context) { MemoryVoiceRecorder(context.applicationContext) }
+    val roundVideoRecorder = remember(context) {
+        MemoryRoundVideoRecorder(context.applicationContext)
+    }
     val recordingCues = remember { RecordingCuePlayer() }
+    var captureType by remember { mutableStateOf(ComposerCaptureType.VOICE) }
     var voiceMode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
     var voiceElapsedMillis by remember { mutableLongStateOf(0L) }
     var voicePermissionPending by remember { mutableStateOf(false) }
+    var roundVideoPermissionPending by remember { mutableStateOf(false) }
+    var roundVideoVisible by remember { mutableStateOf(false) }
 
     fun cancelVoiceRecording() {
         val wasRecording = voiceRecorder.isRecording
@@ -196,6 +206,54 @@ internal fun ConversationScreen(
         voiceElapsedMillis = 0L
     }
 
+    fun startRoundVideoRecording(mode: VoiceRecordingMode) {
+        if (roundVideoRecorder.state != MemoryRoundVideoRecorder.State.IDLE || busy) return
+        showEmojiPicker = false
+        inputTransition = ComposerInputTransition.NONE
+        focusManager.clearFocus()
+        keyboard?.hide()
+        recordingCues.playStart()
+        roundVideoVisible = true
+        voiceMode = mode
+        roundVideoRecorder.start(
+            onReady = { video ->
+                if (voiceMode != VoiceRecordingMode.IDLE) recordingCues.playStop()
+                roundVideoVisible = false
+                voiceMode = VoiceRecordingMode.IDLE
+                onSendRoundVideo(video)
+            },
+            onFailure = { message ->
+                if (voiceMode != VoiceRecordingMode.IDLE) recordingCues.playStop()
+                roundVideoVisible = false
+                voiceMode = VoiceRecordingMode.IDLE
+                onError(message)
+            },
+        )
+    }
+
+    fun cancelActiveRecording() {
+        if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+            val wasRecording = roundVideoVisible
+            roundVideoRecorder.cancel()
+            roundVideoVisible = false
+            if (wasRecording) recordingCues.playStop()
+            voiceMode = VoiceRecordingMode.IDLE
+        } else {
+            cancelVoiceRecording()
+        }
+    }
+
+    fun finishActiveRecording() {
+        if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+            if (!roundVideoVisible) return
+            roundVideoRecorder.finish()
+            recordingCues.playStop()
+            voiceMode = VoiceRecordingMode.FINALIZING
+        } else {
+            finishVoiceRecording()
+        }
+    }
+
     val voicePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -208,9 +266,24 @@ internal fun ConversationScreen(
             onError("Für Sprachnachrichten braucht Love Doves Zugriff auf das Mikrofon.")
         }
     }
-    DisposableEffect(voiceRecorder, recordingCues) {
+    val roundVideoPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        onSystemPermissionPrompt(false)
+        val shouldStart = roundVideoPermissionPending
+        roundVideoPermissionPending = false
+        val granted = result[Manifest.permission.CAMERA] == true &&
+            result[Manifest.permission.RECORD_AUDIO] == true
+        if (granted && shouldStart) {
+            startRoundVideoRecording(VoiceRecordingMode.LOCKED)
+        } else if (shouldStart) {
+            onError("Für runde Videos braucht Love Doves Zugriff auf Kamera und Mikrofon.")
+        }
+    }
+    DisposableEffect(voiceRecorder, roundVideoRecorder, recordingCues) {
         onDispose {
             voiceRecorder.close()
+            roundVideoRecorder.close()
             recordingCues.close()
         }
     }
@@ -268,11 +341,14 @@ internal fun ConversationScreen(
         focusManager.clearFocus()
         keyboard?.hide()
     }
-    BackHandler(enabled = voiceMode != VoiceRecordingMode.IDLE) {
-        cancelVoiceRecording()
+    BackHandler(enabled = voiceMode != VoiceRecordingMode.IDLE || roundVideoVisible) {
+        cancelActiveRecording()
     }
-    LaunchedEffect(voiceMode) {
-        while (voiceMode != VoiceRecordingMode.IDLE) {
+    LaunchedEffect(voiceMode, captureType) {
+        while (
+            captureType == ComposerCaptureType.VOICE &&
+            voiceMode != VoiceRecordingMode.IDLE
+        ) {
             voiceElapsedMillis = voiceRecorder.elapsedMillis()
             if (voiceElapsedMillis >= LoveDovesRepository.MAX_VOICE_DURATION_MILLIS) {
                 finishVoiceRecording()
@@ -358,7 +434,7 @@ internal fun ConversationScreen(
         }
     }
     fun beginSelection(messageId: String) {
-        cancelVoiceRecording()
+        cancelActiveRecording()
         showEmojiPicker = false
         inputTransition = ComposerInputTransition.NONE
         focusManager.clearFocus()
@@ -409,7 +485,7 @@ internal fun ConversationScreen(
                     modifier = Modifier.size(46.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        HeartIcon(modifier = Modifier.size(22.dp))
+                        HeartIcon(modifier = Modifier.size(26.dp))
                     }
                 }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -426,60 +502,80 @@ internal fun ConversationScreen(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                IconButton(onClick = onSettings) { SettingsIcon("Einstellungen") }
+                IconButton(onClick = onSettings) {
+                    SettingsIcon("Einstellungen", Modifier.size(28.dp))
+                }
             }
         }
-        if (messages.isEmpty()) {
-            Column(
-                Modifier.weight(1f).fillMaxWidth().padding(36.dp),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Surface(color = LoveBlush, shape = CircleShape, modifier = Modifier.size(92.dp)) {
-                    Box(contentAlignment = Alignment.Center) { HeartIcon(modifier = Modifier.size(42.dp)) }
-                }
-                Text(
-                    "Hier beginnt euer kleiner Raum.",
-                    modifier = Modifier.padding(top = 24.dp),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Die erste Nachricht kann nur auf eure beiden Geräte entschlüsselt werden.",
-                    modifier = Modifier.padding(top = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                reverseLayout = true,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(messages.asReversed(), key = { it.id }) { message ->
-                    MessageBubble(
-                        message = message,
-                        photoBitmaps = photoBitmaps,
-                        voiceBytes = voiceBytes,
-                        selected = message.id in selectedMessageIds,
-                        selectionMode = selectedMessageIds.isNotEmpty(),
-                        onRetry = onRetry,
-                        onOpenMedia = {
-                            cancelVoiceRecording()
-                            showEmojiPicker = false
-                            inputTransition = ComposerInputTransition.NONE
-                            mediaToOpenWhenImeCloses = message.id
-                            focusManager.clearFocus()
-                            keyboard?.hide()
-                        },
-                        onToggleSelection = { toggleSelection(message.id) },
-                        onLongPress = { beginSelection(message.id) },
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(chatBackground),
+        ) {
+            if (messages.isEmpty()) {
+                Column(
+                    Modifier.fillMaxSize().padding(36.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Surface(color = LoveBlush, shape = CircleShape, modifier = Modifier.size(92.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            HeartIcon(modifier = Modifier.size(42.dp))
+                        }
+                    }
+                    Text(
+                        "Hier beginnt euer kleiner Raum.",
+                        modifier = Modifier.padding(top = 24.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "Die erste Nachricht kann nur auf eure beiden Geräte entschlüsselt werden.",
+                        modifier = Modifier.padding(top = 10.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                    reverseLayout = true,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    items(messages.asReversed(), key = { it.id }) { message ->
+                        MessageBubble(
+                            message = message,
+                            photoBitmaps = photoBitmaps,
+                            voiceBytes = voiceBytes,
+                            selected = message.id in selectedMessageIds,
+                            selectionMode = selectedMessageIds.isNotEmpty(),
+                            onRetry = onRetry,
+                            onOpenMedia = {
+                                cancelActiveRecording()
+                                showEmojiPicker = false
+                                inputTransition = ComposerInputTransition.NONE
+                                mediaToOpenWhenImeCloses = message.id
+                                focusManager.clearFocus()
+                                keyboard?.hide()
+                            },
+                            onToggleSelection = { toggleSelection(message.id) },
+                            onLongPress = { beginSelection(message.id) },
+                        )
+                    }
+                }
+            }
+            if (roundVideoVisible) {
+                RoundVideoCaptureOverlay(
+                    recorder = roundVideoRecorder,
+                    onUnavailable = { message ->
+                        cancelActiveRecording()
+                        onError(message)
+                    },
+                )
             }
         }
         Column(
@@ -493,8 +589,13 @@ internal fun ConversationScreen(
                 text = text,
                 busy = busy,
                 emojiPickerVisible = showEmojiPicker,
+                captureType = captureType,
                 voiceMode = voiceMode,
-                voiceElapsedMillis = voiceElapsedMillis,
+                voiceElapsedMillis = if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+                    roundVideoRecorder.elapsedMillis
+                } else {
+                    voiceElapsedMillis
+                },
                 focusRequester = focusRequester,
                 onTextChange = {
                     if (it.text.length <= LoveDovesRepository.MAX_TEXT_LENGTH) text = it
@@ -531,43 +632,83 @@ internal fun ConversationScreen(
                     text = TextFieldValue()
                     onSend(message)
                 },
-                onVoiceStart = {
-                    if (
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-                        startVoiceRecording(VoiceRecordingMode.HOLDING)
+                onCaptureTap = {
+                    captureType = if (captureType == ComposerCaptureType.VOICE) {
+                        ComposerCaptureType.ROUND_VIDEO
                     } else {
-                        voicePermissionPending = true
-                        onSystemPermissionPrompt(true)
-                        voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        ComposerCaptureType.VOICE
                     }
                 },
-                onVoiceCancel = ::cancelVoiceRecording,
+                onVoiceStart = {
+                    if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+                        val hasCamera = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        val hasAudio = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (hasCamera && hasAudio) {
+                            startRoundVideoRecording(VoiceRecordingMode.HOLDING)
+                        } else {
+                            roundVideoPermissionPending = true
+                            onSystemPermissionPrompt(true)
+                            roundVideoPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.CAMERA,
+                                    Manifest.permission.RECORD_AUDIO,
+                                ),
+                            )
+                        }
+                    } else {
+                        if (
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            startVoiceRecording(VoiceRecordingMode.HOLDING)
+                        } else {
+                            voicePermissionPending = true
+                            onSystemPermissionPrompt(true)
+                            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                },
+                onVoiceCancel = ::cancelActiveRecording,
                 onVoiceLock = {
                     if (voiceMode == VoiceRecordingMode.HOLDING) {
                         voiceMode = VoiceRecordingMode.LOCKED
                     }
                 },
                 onVoiceRelease = {
-                    if (voiceMode == VoiceRecordingMode.HOLDING) finishVoiceRecording()
+                    if (voiceMode == VoiceRecordingMode.HOLDING) finishActiveRecording()
                 },
                 onVoicePauseToggle = {
                     runCatching {
                         if (voiceMode == VoiceRecordingMode.PAUSED) {
-                            voiceRecorder.resume()
+                            if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+                                roundVideoRecorder.resume()
+                            } else {
+                                voiceRecorder.resume()
+                            }
                             voiceMode = VoiceRecordingMode.LOCKED
                         } else if (voiceMode == VoiceRecordingMode.LOCKED) {
-                            voiceRecorder.pause()
-                            voiceElapsedMillis = voiceRecorder.elapsedMillis()
+                            if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+                                roundVideoRecorder.pause()
+                            } else {
+                                voiceRecorder.pause()
+                                voiceElapsedMillis = voiceRecorder.elapsedMillis()
+                            }
                             voiceMode = VoiceRecordingMode.PAUSED
                         }
                     }.onFailure {
-                        cancelVoiceRecording()
+                        cancelActiveRecording()
                         onError(it.message ?: "Die Aufnahme konnte nicht pausiert werden.")
                     }
                 },
-                onVoiceSend = ::finishVoiceRecording,
+                onVoiceSend = ::finishActiveRecording,
             )
             if (inputSurfaceHeightPx > 0) {
                 Box(Modifier.fillMaxWidth().height(inputSurfaceHeight)) {
@@ -635,6 +776,7 @@ internal fun MessageComposer(
     text: TextFieldValue,
     busy: Boolean,
     emojiPickerVisible: Boolean,
+    captureType: ComposerCaptureType,
     voiceMode: VoiceRecordingMode,
     voiceElapsedMillis: Long,
     focusRequester: FocusRequester,
@@ -643,6 +785,7 @@ internal fun MessageComposer(
     onEmoji: () -> Unit,
     onAttachment: () -> Unit,
     onSend: () -> Unit,
+    onCaptureTap: () -> Unit,
     onVoiceStart: () -> Unit,
     onVoiceCancel: () -> Unit,
     onVoiceLock: () -> Unit,
@@ -688,9 +831,9 @@ internal fun MessageComposer(
                             modifier = Modifier.size(44.dp),
                         ) {
                             if (emojiPickerVisible) {
-                                KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(22.dp))
+                                KeyboardIcon("Tastatur öffnen", modifier = Modifier.size(26.dp))
                             } else {
-                                SmileIcon("Emoji wählen", modifier = Modifier.size(22.dp))
+                                SmileIcon("Emoji wählen", modifier = Modifier.size(26.dp))
                             }
                         }
                         BasicTextField(
@@ -725,7 +868,7 @@ internal fun MessageComposer(
                             enabled = !busy && !recording,
                             modifier = Modifier.size(44.dp),
                         ) {
-                            PaperclipIcon("Medien anhängen", modifier = Modifier.size(22.dp))
+                            PaperclipIcon("Medien anhängen", modifier = Modifier.size(26.dp))
                         }
                     }
                     if (recording) {
@@ -741,12 +884,14 @@ internal fun MessageComposer(
             }
         }
         ComposerVoiceAction(
+            captureType = captureType,
             mode = voiceMode,
             canSendText = canSend,
             enabled = !busy,
             cancelThresholdPx = cancelThresholdPx,
             lockThresholdPx = lockThresholdPx,
             onSendText = onSend,
+            onCaptureTap = onCaptureTap,
             onVoiceStart = {
                 cancelProgress = 0f
                 onVoiceStart()
@@ -846,12 +991,14 @@ private fun VoiceRecordingBar(
 
 @Composable
 private fun ComposerVoiceAction(
+    captureType: ComposerCaptureType,
     mode: VoiceRecordingMode,
     canSendText: Boolean,
     enabled: Boolean,
     cancelThresholdPx: Float,
     lockThresholdPx: Float,
     onSendText: () -> Unit,
+    onCaptureTap: () -> Unit,
     onVoiceStart: () -> Unit,
     onCancelProgress: (Float) -> Unit,
     onVoiceCancel: () -> Unit,
@@ -862,6 +1009,7 @@ private fun ComposerVoiceAction(
 ) {
     val recording = mode != VoiceRecordingMode.IDLE
     val locked = mode == VoiceRecordingMode.LOCKED || mode == VoiceRecordingMode.PAUSED
+    val finalizing = mode == VoiceRecordingMode.FINALIZING
     val pulse by rememberInfiniteTransition(label = "microphone pulse").animateFloat(
         initialValue = 0.78f,
         targetValue = 1f,
@@ -874,7 +1022,7 @@ private fun ComposerVoiceAction(
             .height(48.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (recording) {
+        if (recording && !finalizing) {
             val lockOffset = with(LocalDensity.current) {
                 IntOffset(0, -VOICE_LOCK_OVERLAY_OFFSET.roundToPx())
             }
@@ -932,11 +1080,20 @@ private fun ComposerVoiceAction(
                 CircleShape,
             )
             .then(
-                if (!canSendText && !locked) {
+                if (finalizing) {
+                    Modifier
+                } else if (!canSendText && !locked) {
                     Modifier.voiceRecordGesture(
                         enabled = enabled,
+                        contentDescription = if (captureType == ComposerCaptureType.VOICE) {
+                            "Sprachnachricht aufnehmen"
+                        } else {
+                            "Rundes Video aufnehmen"
+                        },
+                        tapThresholdMillis = CAPTURE_TAP_THRESHOLD_MILLIS,
                         cancelThresholdPx = cancelThresholdPx,
                         lockThresholdPx = lockThresholdPx,
+                        onTap = onCaptureTap,
                         onStart = onVoiceStart,
                         onCancelProgress = onCancelProgress,
                         onCancel = onVoiceCancel,
@@ -951,16 +1108,32 @@ private fun ComposerVoiceAction(
                 },
             )
         Box(actionModifier, contentAlignment = Alignment.Center) {
-            if (canSendText || locked) {
+            if (finalizing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+            } else if (canSendText || locked) {
                 SendHorizontalIcon(
-                    if (locked) "Sprachnachricht senden" else "Nachricht senden",
-                    modifier = Modifier.size(20.dp),
+                    when {
+                        !locked -> "Nachricht senden"
+                        captureType == ComposerCaptureType.ROUND_VIDEO -> "Rundes Video senden"
+                        else -> "Sprachnachricht senden"
+                    },
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White,
+                )
+            } else if (captureType == ComposerCaptureType.ROUND_VIDEO) {
+                VideoIcon(
+                    "Zu Sprachnachrichten wechseln",
+                    modifier = Modifier.size(26.dp),
                     color = Color.White,
                 )
             } else {
                 MicrophoneIcon(
-                    null,
-                    modifier = Modifier.size(22.dp),
+                    "Zu runden Videos wechseln",
+                    modifier = Modifier.size(26.dp),
                     color = if (enabled) Color.White else LoveInk.copy(alpha = 0.35f),
                 )
             }
@@ -981,11 +1154,13 @@ internal fun TextFieldValue.insertAtSelection(insertedText: String): TextFieldVa
 }
 
 private enum class ComposerInputTransition { NONE, TO_EMOJI, TO_KEYBOARD }
-internal enum class VoiceRecordingMode { IDLE, HOLDING, LOCKED, PAUSED }
+internal enum class ComposerCaptureType { VOICE, ROUND_VIDEO }
+internal enum class VoiceRecordingMode { IDLE, HOLDING, LOCKED, PAUSED, FINALIZING }
 
 private const val INPUT_SETTLE_MILLIS = 120L
 private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
+private const val CAPTURE_TAP_THRESHOLD_MILLIS = 1_000L
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
 private val VOICE_LOCK_OVERLAY_OFFSET = 50.dp
@@ -1025,7 +1200,8 @@ private fun MessageBubble(
                     when {
                         selectionMode -> onToggleSelection()
                         message.kind == LoveDovesRepository.KIND_PHOTO ||
-                            message.kind == LoveDovesRepository.KIND_VIDEO -> onOpenMedia()
+                            message.kind == LoveDovesRepository.KIND_VIDEO ||
+                            message.kind == LoveDovesRepository.KIND_ROUND_VIDEO -> onOpenMedia()
                     }
                 },
                 onLongClick = onLongPress,
@@ -1041,13 +1217,22 @@ private fun MessageBubble(
                 contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
                 Surface(
+                    modifier = if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
+                        Modifier.size(240.dp)
+                    } else {
+                        Modifier
+                    },
                     color = if (message.outgoing) LoveBlush else LoveMist,
-                    shape = RoundedCornerShape(
-                        topStart = 22.dp,
-                        topEnd = 22.dp,
-                        bottomStart = if (message.outgoing) 22.dp else 6.dp,
-                        bottomEnd = if (message.outgoing) 6.dp else 22.dp,
-                    ),
+                    shape = if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
+                        CircleShape
+                    } else {
+                        RoundedCornerShape(
+                            topStart = 22.dp,
+                            topEnd = 22.dp,
+                            bottomStart = if (message.outgoing) 22.dp else 6.dp,
+                            bottomEnd = if (message.outgoing) 6.dp else 22.dp,
+                        )
+                    },
                 ) {
                     when (message.kind) {
                     LoveDovesRepository.KIND_PHOTO -> {
@@ -1094,6 +1279,33 @@ private fun MessageBubble(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
+                                }
+                            }
+                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
+                        }
+                    }
+                    LoveDovesRepository.KIND_ROUND_VIDEO -> {
+                        val mediaId = requireNotNull(message.mediaId)
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            EncryptedPhotoImage(
+                                mediaId = mediaId,
+                                photoBitmaps = photoBitmaps,
+                                contentDescription = if (message.outgoing) {
+                                    "Gesendetes rundes Video"
+                                } else {
+                                    "Empfangenes rundes Video"
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Surface(
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.42f),
+                                contentColor = Color.White,
+                                modifier = Modifier.size(52.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    PlayIcon(modifier = Modifier.size(24.dp), color = Color.White)
                                 }
                             }
                             MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
@@ -1306,6 +1518,8 @@ private fun messageMetadata(message: ConversationEventEntity): MessageMetadata =
 internal fun SettingsScreen(
     pair: PairStateEntity,
     busy: Boolean,
+    chatBackground: ChatBackgroundOption,
+    onChatBackground: (ChatBackgroundOption) -> Unit,
     onBack: () -> Unit,
     onRecovery: (PairingMode) -> Unit,
     onDelete: () -> Unit,
@@ -1354,6 +1568,15 @@ internal fun SettingsScreen(
                 SettingsInfoItem(
                     title = "Sicherheitswörter",
                     detail = pair.safetyWords,
+                )
+            }
+            item {
+                SettingsSectionHeader("Chat")
+            }
+            item {
+                ChatBackgroundSetting(
+                    selected = chatBackground,
+                    onSelected = onChatBackground,
                 )
             }
             item {
@@ -1451,6 +1674,45 @@ internal fun SettingsScreen(
                             "Zurück",
                             onClick = { recoveryStep = RecoveryStep.CONFIRM },
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatBackgroundSetting(
+    selected: ChatBackgroundOption,
+    onSelected: (ChatBackgroundOption) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp)) {
+        SettingsRowTitle("Hintergrund")
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            ChatBackgroundOption.entries.forEach { option ->
+                Surface(
+                    onClick = { onSelected(option) },
+                    modifier = Modifier.size(42.dp).semantics {
+                        contentDescription = "Chat-Hintergrund ${option.label}"
+                        if (option == selected) stateDescription = "Ausgewählt"
+                    },
+                    shape = CircleShape,
+                    color = option.color,
+                    border = BorderStroke(
+                        if (option == selected) 2.dp else 1.dp,
+                        if (option == selected) LoveInk else LoveInk.copy(alpha = 0.2f),
+                    ),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (option == selected) {
+                            SelectionCheckIcon(
+                                description = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }
