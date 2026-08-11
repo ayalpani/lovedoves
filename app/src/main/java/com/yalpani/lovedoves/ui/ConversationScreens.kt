@@ -865,7 +865,7 @@ private fun ComposerVoiceAction(
             )
         Box(actionModifier, contentAlignment = Alignment.Center) {
             if (canSendText || locked) {
-                SendIcon(
+                SendHorizontalIcon(
                     if (locked) "Sprachnachricht senden" else "Nachricht senden",
                     modifier = Modifier.size(if (recording) 25.dp else 20.dp),
                     color = Color.White,

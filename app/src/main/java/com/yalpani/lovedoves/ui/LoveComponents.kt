@@ -409,14 +409,14 @@ internal fun PauseIcon(
 )
 
 @Composable
-internal fun SendIcon(
+internal fun SendHorizontalIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),
     color: Color = LocalContentColor.current,
 ) = LoveIcon(
     listOf(
-        "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11Z",
-        "m21.854 2.147-10.94 10.939",
+        "M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z",
+        "M6 12h16",
     ),
     description,
     modifier,

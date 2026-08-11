@@ -195,7 +195,7 @@ internal fun PairingHomeScreen(
                 "Nein, Link teilen",
                 onClick = { onCreate(PairingMode.REMOTE, bootstrap) },
                 enabled = !busy,
-                icon = { SendIcon() },
+                icon = { SendHorizontalIcon() },
             )
             if (busy) CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
         }
@@ -215,7 +215,7 @@ internal fun PairingHomeScreen(
                 "Einladungslink einfügen",
                 onClick = { step = PairingEntryStep.JOIN_LINK },
                 enabled = !busy,
-                icon = { SendIcon() },
+                icon = { SendHorizontalIcon() },
             )
         }
 
@@ -346,7 +346,7 @@ internal fun PairingPendingScreen(
                         "Einladungslink teilen",
                         onClick = { onShare(snapshot.remoteLink) },
                         enabled = !busy,
-                        icon = { SendIcon() },
+                        icon = { SendHorizontalIcon() },
                     )
                     LoveSecondaryButton(
                         "Antwort abrufen",
