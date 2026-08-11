@@ -148,6 +148,7 @@ internal fun ConversationScreen(
     var showEmojiPicker by remember { mutableStateOf(false) }
     var inputTransition by remember { mutableStateOf(ComposerInputTransition.NONE) }
     var openAttachmentWhenImeCloses by remember { mutableStateOf(false) }
+    var mediaToOpenWhenImeCloses by remember { mutableStateOf<String?>(null) }
     var lastKeyboardHeightPx by remember { mutableIntStateOf(0) }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
     var confirmDeleteSelection by remember { mutableStateOf(false) }
@@ -237,6 +238,15 @@ internal fun ConversationScreen(
     val emojiSearchImeVisible =
         showEmojiPicker && inputTransition == ComposerInputTransition.NONE && imeHeightPx > 0
     val listState = rememberLazyListState()
+    val newestMessage = messages.lastOrNull()
+    LaunchedEffect(newestMessage?.id) {
+        if (
+            newestMessage != null &&
+            shouldPinNewestMessage(newestMessage.outgoing, listState.firstVisibleItemIndex)
+        ) {
+            listState.requestScrollToItem(0)
+        }
+    }
     val unreadIncomingIds = messages
         .filter { !it.outgoing && it.deliveryState != LoveDovesRepository.DELIVERY_READ }
         .map { it.id }
@@ -270,11 +280,13 @@ internal fun ConversationScreen(
         showEmojiPicker,
         inputTransition,
         openAttachmentWhenImeCloses,
+        mediaToOpenWhenImeCloses,
     ) {
         if (
             !showEmojiPicker &&
             inputTransition == ComposerInputTransition.NONE &&
             !openAttachmentWhenImeCloses &&
+            mediaToOpenWhenImeCloses == null &&
             imeHeightPx > 0
         ) {
             lastKeyboardHeightPx = imeHeightPx
@@ -312,6 +324,24 @@ internal fun ConversationScreen(
             withFrameNanos { }
             openAttachmentWhenImeCloses = false
             onAttachment()
+        }
+    }
+    LaunchedEffect(
+        mediaToOpenWhenImeCloses,
+        imeHeightPx,
+        showEmojiPicker,
+        inputTransition,
+    ) {
+        val mediaId = mediaToOpenWhenImeCloses
+        if (
+            mediaId != null &&
+            imeHeightPx == 0 &&
+            !showEmojiPicker &&
+            inputTransition == ComposerInputTransition.NONE
+        ) {
+            withFrameNanos { }
+            mediaToOpenWhenImeCloses = null
+            onMedia(mediaId)
         }
     }
     fun toggleSelection(messageId: String) {
@@ -432,7 +462,14 @@ internal fun ConversationScreen(
                         selected = message.id in selectedMessageIds,
                         selectionMode = selectedMessageIds.isNotEmpty(),
                         onRetry = onRetry,
-                        onOpenMedia = { onMedia(message.id) },
+                        onOpenMedia = {
+                            cancelVoiceRecording()
+                            showEmojiPicker = false
+                            inputTransition = ComposerInputTransition.NONE
+                            mediaToOpenWhenImeCloses = message.id
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                        },
                         onToggleSelection = { toggleSelection(message.id) },
                         onLongPress = { beginSelection(message.id) },
                     )
@@ -933,7 +970,7 @@ private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
-private val VOICE_LOCK_OVERLAY_OFFSET = 44.dp
+private val VOICE_LOCK_OVERLAY_OFFSET = 50.dp
 
 internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val clamped = durationMillis.coerceAtLeast(0L)
@@ -942,6 +979,11 @@ internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val tenths = (clamped / 100L) % 10L
     return "%d:%02d,%d".format(minutes, seconds, tenths)
 }
+
+internal fun shouldPinNewestMessage(
+    newestOutgoing: Boolean,
+    firstVisibleItemIndex: Int,
+): Boolean = newestOutgoing || firstVisibleItemIndex <= 1
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
