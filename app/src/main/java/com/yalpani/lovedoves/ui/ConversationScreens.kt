@@ -1029,7 +1029,7 @@ private fun MessageText(message: ConversationEventEntity) {
                 inlineId to InlineTextContent(
                     Placeholder(
                         width = 1.5.em,
-                        height = 0.9.em,
+                        height = 1.5.em,
                         placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
                     ),
                 ) {
