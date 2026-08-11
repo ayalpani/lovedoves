@@ -49,8 +49,7 @@ private sealed interface Overlay {
     data object Scanner : Overlay
     data object MediaCapture : Overlay
     data class Settings(val pair: PairStateEntity) : Overlay
-    data class Photo(val mediaId: String) : Overlay
-    data class Video(val mediaId: String) : Overlay
+    data class Media(val eventId: String) : Overlay
 }
 
 private enum class ContentRoute { LOADING, PROFILE, PAIRING_HOME, PAIRING, CONVERSATION }
@@ -193,8 +192,9 @@ internal fun LoveDovesApp(
                         onAttachment = { overlay = Overlay.MediaCapture },
                         onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
-                        onPhoto = { overlay = Overlay.Photo(it) },
-                        onVideo = { overlay = Overlay.Video(it) },
+                        onMedia = { overlay = Overlay.Media(it) },
+                        onDeleteMessages = controller::deleteMessages,
+                        onMessagesSeen = controller::markMessagesRead,
                     )
                 }
             }
@@ -206,8 +206,7 @@ internal fun LoveDovesApp(
                         Overlay.MediaCapture -> "media-capture"
                         Overlay.Scanner -> "scanner"
                         is Overlay.Settings -> "settings"
-                        is Overlay.Photo -> "photo"
-                        is Overlay.Video -> "video"
+                        is Overlay.Media -> "media"
                         null -> "none"
                     }
                 },
@@ -282,14 +281,18 @@ internal fun LoveDovesApp(
                                 }
                             },
                         )
-                        is Overlay.Photo -> PhotoDetailScreen(
-                            destination.mediaId,
-                            photoBitmaps,
-                        ) { overlay = null }
-                        is Overlay.Video -> VideoDetailScreen(
-                            destination.mediaId,
-                            controller,
-                        ) { overlay = null }
+                        is Overlay.Media -> {
+                            val conversation = content as? AppContentState.Conversation
+                            if (conversation != null) {
+                                MediaDetailScreen(
+                                    messages = conversation.messages,
+                                    initialEventId = destination.eventId,
+                                    photoBitmaps = photoBitmaps,
+                                    controller = controller,
+                                    onBack = { overlay = null },
+                                )
+                            }
+                        }
                         null -> Unit
                     }
                 }

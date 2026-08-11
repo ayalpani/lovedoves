@@ -25,6 +25,13 @@ Objekte: das Video und sein Vorschaubild. Dauer und Abmessungen liegen im
 Signal-geschützten Ereignis. Beide Relay-Objekte besitzen unabhängige Schlüssel,
 Nonces und Prüfsummen.
 
+`DeliveryReceiptV1` unterscheidet „auf dem Partnergerät gespeichert“ und
+„im geöffneten Chat gesehen“. Lesebestätigungen bleiben Signal-verschlüsselt
+und bündeln mehrere Nachrichten-IDs. Sie erweitern denselben Receipt-Typ
+additiv, damit ältere V1-Clients sie weiterhin sicher als gewöhnliche
+Zustellbestätigung behandeln. Das kurzzeitig in Vorab-Builds verwendete
+`ReadReceiptV1` wird nur noch empfangen, aber nicht mehr erzeugt.
+
 ## Relay-API
 
 Alle schreibenden oder lesenden Operationen verwenden eine Bearer-Capability.

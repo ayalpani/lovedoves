@@ -110,6 +110,19 @@ internal class LoveDovesController(
         repository.retryMessage(id)
     }
 
+    fun deleteMessages(ids: Set<String>) = action {
+        repository.deleteMessages(ids)
+    }
+
+    fun markMessagesRead(ids: List<String>) {
+        if (ids.isEmpty()) return
+        scope.launch {
+            runCatching {
+                repositoryMutex.withLock { repository.markMessagesRead(ids) }
+            }
+        }
+    }
+
     fun sync() = action {
         repository.syncNow()
         refreshNow(sync = false)

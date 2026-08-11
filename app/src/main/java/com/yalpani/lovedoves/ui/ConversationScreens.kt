@@ -1,5 +1,7 @@
 package com.yalpani.lovedoves.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -11,9 +13,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,14 +71,19 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
@@ -93,6 +102,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 internal fun ConversationScreen(
     pair: PairStateEntity,
     messages: List<ConversationEventEntity>,
@@ -102,17 +112,22 @@ internal fun ConversationScreen(
     onAttachment: () -> Unit,
     onSettings: () -> Unit,
     onRetry: (String) -> Unit,
-    onPhoto: (String) -> Unit,
-    onVideo: (String) -> Unit,
+    onMedia: (String) -> Unit,
+    onDeleteMessages: (Set<String>) -> Unit,
+    onMessagesSeen: (List<String>) -> Unit,
 ) {
     var text by remember { mutableStateOf(TextFieldValue()) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var inputTransition by remember { mutableStateOf(ComposerInputTransition.NONE) }
     var openAttachmentWhenImeCloses by remember { mutableStateOf(false) }
     var lastKeyboardHeightPx by remember { mutableIntStateOf(0) }
+    var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
+    var confirmDeleteSelection by remember { mutableStateOf(false) }
+    val deleteSelectionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val imeHeightPx = (
@@ -137,6 +152,15 @@ internal fun ConversationScreen(
     val emojiSearchImeVisible =
         showEmojiPicker && inputTransition == ComposerInputTransition.NONE && imeHeightPx > 0
     val listState = rememberLazyListState()
+    val unreadIncomingIds = messages
+        .filter { !it.outgoing && it.deliveryState != LoveDovesRepository.DELIVERY_READ }
+        .map { it.id }
+    LaunchedEffect(unreadIncomingIds) {
+        if (unreadIncomingIds.isNotEmpty()) onMessagesSeen(unreadIncomingIds)
+    }
+    BackHandler(enabled = selectedMessageIds.isNotEmpty()) {
+        selectedMessageIds = emptySet()
+    }
     BackHandler(enabled = showEmojiPicker) {
         showEmojiPicker = false
         inputTransition = ComposerInputTransition.NONE
@@ -195,31 +219,83 @@ internal fun ConversationScreen(
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
+    fun toggleSelection(messageId: String) {
+        selectedMessageIds = if (messageId in selectedMessageIds) {
+            selectedMessageIds - messageId
+        } else {
+            selectedMessageIds + messageId
+        }
+    }
+    fun beginSelection(messageId: String) {
+        showEmojiPicker = false
+        inputTransition = ComposerInputTransition.NONE
+        focusManager.clearFocus()
+        keyboard?.hide()
+        selectedMessageIds = selectedMessageIds + messageId
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                color = LoveBlush,
-                shape = CircleShape,
-                modifier = Modifier.size(46.dp),
-            ) { Box(contentAlignment = Alignment.Center) { HeartIcon(modifier = Modifier.size(22.dp)) } }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+        if (selectedMessageIds.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().height(74.dp).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { selectedMessageIds = emptySet() }) {
+                    CloseIcon("Auswahl beenden")
+                }
                 Text(
-                    pair.partnerName,
+                    "${selectedMessageIds.size} ausgewählt",
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    "Nur für euch zwei",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                val selectedText = messages
+                    .filter { it.id in selectedMessageIds }
+                    .mapNotNull { it.body }
+                    .joinToString("\n\n")
+                IconButton(
+                    onClick = {
+                        context.getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText("Love Doves", selectedText))
+                        selectedMessageIds = emptySet()
+                    },
+                    enabled = selectedText.isNotEmpty(),
+                ) {
+                    CopyIcon("Text kopieren")
+                }
+                IconButton(onClick = { confirmDeleteSelection = true }) {
+                    DeleteIcon("Ausgewählte Nachrichten löschen")
+                }
             }
-            IconButton(onClick = onSettings) { SettingsIcon("Einstellungen") }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    color = LoveBlush,
+                    shape = CircleShape,
+                    modifier = Modifier.size(46.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        HeartIcon(modifier = Modifier.size(22.dp))
+                    }
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(
+                        pair.partnerName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "Nur für euch zwei",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                IconButton(onClick = onSettings) { SettingsIcon("Einstellungen") }
+            }
         }
         if (messages.isEmpty()) {
             Column(
@@ -252,7 +328,16 @@ internal fun ConversationScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(messages, key = { it.id }) { message ->
-                    MessageBubble(message, photoBitmaps, onRetry, onPhoto, onVideo)
+                    MessageBubble(
+                        message = message,
+                        photoBitmaps = photoBitmaps,
+                        selected = message.id in selectedMessageIds,
+                        selectionMode = selectedMessageIds.isNotEmpty(),
+                        onRetry = onRetry,
+                        onOpenMedia = { onMedia(message.id) },
+                        onToggleSelection = { toggleSelection(message.id) },
+                        onLongPress = { beginSelection(message.id) },
+                    )
                 }
             }
         }
@@ -326,6 +411,40 @@ internal fun ConversationScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+    if (confirmDeleteSelection) {
+        LoveModalBottomSheet(
+            onDismissRequest = { confirmDeleteSelection = false },
+            sheetState = deleteSelectionSheetState,
+        ) {
+            SettingsSheetContent(
+                title = if (selectedMessageIds.size == 1) {
+                    "Nachricht löschen?"
+                } else {
+                    "${selectedMessageIds.size} Nachrichten löschen?"
+                },
+                description = "Die Auswahl wird nur von diesem Gerät gelöscht. Bereits empfangene Inhalte bleiben auf dem Partnergerät erhalten.",
+            ) {
+                LovePrimaryButton(
+                    label = "Lokal löschen",
+                    destructive = true,
+                    enabled = !busy,
+                    onClick = {
+                        val ids = selectedMessageIds
+                        photoBitmaps.evict(
+                            messages.filter { it.id in ids }.mapNotNull { it.mediaId },
+                        )
+                        confirmDeleteSelection = false
+                        selectedMessageIds = emptySet()
+                        onDeleteMessages(ids)
+                    },
+                )
+                LoveSecondaryButton(
+                    label = "Abbrechen",
+                    onClick = { confirmDeleteSelection = false },
+                )
             }
         }
     }
@@ -438,53 +557,74 @@ private const val INPUT_SETTLE_MILLIS = 120L
 private const val EMOJI_EXIT_MILLIS = 100
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun MessageBubble(
     message: ConversationEventEntity,
     photoBitmaps: PhotoBitmapLoader,
+    selected: Boolean,
+    selectionMode: Boolean,
     onRetry: (String) -> Unit,
-    onPhoto: (String) -> Unit,
-    onVideo: (String) -> Unit,
+    onOpenMedia: () -> Unit,
+    onToggleSelection: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxWidth(),
-        horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .background(if (selected) LoveInk.copy(alpha = 0.1f) else Color.Transparent)
+            .combinedClickable(
+                onClick = {
+                    when {
+                        selectionMode -> onToggleSelection()
+                        message.kind == LoveDovesRepository.KIND_PHOTO ||
+                            message.kind == LoveDovesRepository.KIND_VIDEO -> onOpenMedia()
+                    }
+                },
+                onLongClick = onLongPress,
+            )
+            .padding(vertical = 2.dp),
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(0.82f),
-            contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
         ) {
-            Surface(
-                color = if (message.outgoing) LoveBlush else LoveMist,
-                shape = RoundedCornerShape(
-                    topStart = 22.dp,
-                    topEnd = 22.dp,
-                    bottomStart = if (message.outgoing) 22.dp else 6.dp,
-                    bottomEnd = if (message.outgoing) 6.dp else 22.dp,
-                ),
+            Box(
+                modifier = Modifier.fillMaxWidth(0.82f),
+                contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                when (message.kind) {
+                Surface(
+                    color = if (message.outgoing) LoveBlush else LoveMist,
+                    shape = RoundedCornerShape(
+                        topStart = 22.dp,
+                        topEnd = 22.dp,
+                        bottomStart = if (message.outgoing) 22.dp else 6.dp,
+                        bottomEnd = if (message.outgoing) 6.dp else 22.dp,
+                    ),
+                ) {
+                    when (message.kind) {
                     LoveDovesRepository.KIND_PHOTO -> {
                         val mediaId = requireNotNull(message.mediaId)
-                        EncryptedPhotoImage(
-                            mediaId = mediaId,
-                            photoBitmaps = photoBitmaps,
-                            contentDescription = if (message.outgoing) {
-                                "Gesendetes Foto"
-                            } else {
-                                "Empfangenes Foto"
-                            },
-                            modifier = Modifier.fillMaxWidth().height(260.dp)
-                                .clickable { onPhoto(mediaId) },
-                            contentScale = ContentScale.Crop,
-                        )
+                        Box {
+                            EncryptedPhotoImage(
+                                mediaId = mediaId,
+                                photoBitmaps = photoBitmaps,
+                                contentDescription = if (message.outgoing) {
+                                    "Gesendetes Foto"
+                                } else {
+                                    "Empfangenes Foto"
+                                },
+                                modifier = Modifier.fillMaxWidth().height(260.dp),
+                                contentScale = ContentScale.Crop,
+                            )
+                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
+                        }
                     }
                     LoveDovesRepository.KIND_VIDEO -> {
                         val mediaId = requireNotNull(message.mediaId)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(260.dp)
-                                .clickable { onVideo(mediaId) },
+                                .height(260.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             EncryptedPhotoImage(
@@ -508,45 +648,18 @@ private fun MessageBubble(
                                     PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
                                 }
                             }
+                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
                         }
                     }
-                    else -> Text(
-                        message.body.orEmpty(),
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    else -> MessageText(message)
+                    }
                 }
             }
-        }
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                formatTime(message.createdAtEpochMillis),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall,
-            )
-            if (message.outgoing) {
-                Text(
-                    when (message.deliveryState) {
-                        LoveDovesRepository.DELIVERY_SENDING -> "Wird gesendet …"
-                        LoveDovesRepository.DELIVERY_SENT -> "Gesendet"
-                        LoveDovesRepository.DELIVERY_DELIVERED -> "Zugestellt"
-                        else -> "Nicht gesendet"
-                    },
-                    color = if (message.deliveryState == LoveDovesRepository.DELIVERY_FAILED) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                if (message.deliveryState == LoveDovesRepository.DELIVERY_FAILED) {
+            if (message.outgoing && message.deliveryState == LoveDovesRepository.DELIVERY_FAILED) {
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)) {
                     Text(
                         "Erneut senden",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.clickable { onRetry(message.id) }.padding(4.dp),
@@ -554,8 +667,114 @@ private fun MessageBubble(
                 }
             }
         }
+        if (selectionMode) {
+            Surface(
+                modifier = Modifier
+                    .align(if (message.outgoing) Alignment.CenterStart else Alignment.CenterEnd)
+                    .padding(horizontal = 8.dp)
+                    .size(26.dp),
+                shape = CircleShape,
+                color = if (selected) LoveInk else Color.White,
+                border = BorderStroke(1.5.dp, LoveInk.copy(alpha = 0.45f)),
+                contentColor = if (selected) Color.White else Color.Transparent,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    SelectionCheckIcon(modifier = Modifier.size(16.dp))
+                }
+            }
+        }
     }
 }
+
+@Composable
+private fun MessageText(message: ConversationEventEntity) {
+    val metadataColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val statusColor = if (message.deliveryState == LoveDovesRepository.DELIVERY_READ) {
+        Color(0xFFB44E68)
+    } else if (message.deliveryState == LoveDovesRepository.DELIVERY_FAILED) {
+        MaterialTheme.colorScheme.error
+    } else {
+        metadataColor
+    }
+    val metadata = messageMetadata(message)
+    Text(
+        text = buildAnnotatedString {
+            append(message.body.orEmpty())
+            append("\u00A0\u00A0")
+            pushStyle(
+                SpanStyle(
+                    color = metadataColor,
+                    fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                ),
+            )
+            append(formatTime(message.createdAtEpochMillis))
+            pop()
+            if (metadata.symbol.isNotEmpty()) {
+                append("\u00A0")
+                pushStyle(
+                    SpanStyle(
+                        color = statusColor,
+                        fontSize = MaterialTheme.typography.labelMedium.fontSize,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+                append(metadata.symbol)
+                pop()
+            }
+        },
+        modifier = Modifier
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .semantics { if (metadata.description.isNotEmpty()) stateDescription = metadata.description },
+        style = MaterialTheme.typography.bodyLarge,
+    )
+}
+
+@Composable
+private fun MessageMediaMetadata(
+    message: ConversationEventEntity,
+    modifier: Modifier = Modifier,
+) {
+    val metadata = messageMetadata(message)
+    Surface(
+        modifier = modifier.padding(8.dp),
+        color = Color.Black.copy(alpha = 0.52f),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            text = buildString {
+                append(formatTime(message.createdAtEpochMillis))
+                if (metadata.symbol.isNotEmpty()) append("  ${metadata.symbol}")
+            },
+            modifier = Modifier
+                .padding(horizontal = 7.dp, vertical = 3.dp)
+                .semantics {
+                    if (metadata.description.isNotEmpty()) stateDescription = metadata.description
+                },
+            color = if (message.deliveryState == LoveDovesRepository.DELIVERY_READ) {
+                Color(0xFFFFAFC2)
+            } else {
+                Color.White
+            },
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private data class MessageMetadata(val symbol: String, val description: String)
+
+private fun messageMetadata(message: ConversationEventEntity): MessageMetadata =
+    if (!message.outgoing) {
+        MessageMetadata("", "")
+    } else {
+        when (message.deliveryState) {
+            LoveDovesRepository.DELIVERY_SENDING -> MessageMetadata("◷", "Wird gesendet")
+            LoveDovesRepository.DELIVERY_SENT -> MessageMetadata("✓", "Gesendet")
+            LoveDovesRepository.DELIVERY_DELIVERED -> MessageMetadata("✓✓", "Zugestellt")
+            LoveDovesRepository.DELIVERY_READ -> MessageMetadata("✓✓", "Gelesen")
+            else -> MessageMetadata("!", "Nicht gesendet")
+        }
+    }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -853,32 +1072,7 @@ private fun SettingsSheetContent(
 private enum class RecoveryStep { CONFIRM, METHOD }
 
 @Composable
-internal fun PhotoDetailScreen(
-    mediaId: String,
-    photoBitmaps: PhotoBitmapLoader,
-    onBack: () -> Unit,
-) {
-    BackHandler(onBack = onBack)
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        EncryptedPhotoImage(
-            mediaId,
-            photoBitmaps,
-            "Foto in voller Größe",
-            Modifier.fillMaxSize(),
-            ContentScale.Fit,
-            zoomable = true,
-            backgroundColor = Color.Black,
-        )
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.statusBarsPadding().padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.45f), CircleShape),
-        ) { CloseIcon("Foto schließen") }
-    }
-}
-
-@Composable
-private fun EncryptedPhotoImage(
+internal fun EncryptedPhotoImage(
     mediaId: String,
     photoBitmaps: PhotoBitmapLoader,
     contentDescription: String,

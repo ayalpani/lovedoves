@@ -26,7 +26,8 @@ Verschlüsselung und serverseitig keine lesbaren Inhalte.
 
 Der erste Release enthält ausschließlich Kopplung, Text, ein Foto oder kurzes
 Video pro Nachricht, Zustellstatus, erneutes Senden, Sicherheitseinstellungen,
-Löschung und partnergestützte Wiederherstellung. Reaktionen, Gruppen, GIFs,
+lokale Mehrfachauswahl mit Kopieren/Löschen, eine swipebare Medienansicht und
+partnergestützte Wiederherstellung. Reaktionen, Gruppen, GIFs,
 Sprache, Ausflüge, Kalender und gemeinsame Planung gehören nicht in das MVP.
 
 WebRTC bleibt für spätere Anrufe oder sehr große Direktübertragungen reserviert.

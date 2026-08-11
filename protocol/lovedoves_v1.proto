@@ -114,6 +114,15 @@ message VideoMessageV1 {
 message DeliveryReceiptV1 {
   string message_id = 1;
   int64 stored_at_epoch_ms = 2;
+  bool read = 3;
+  repeated string message_ids = 4;
+}
+
+// Accepted for compatibility with pre-release test builds. New clients send
+// read receipts through DeliveryReceiptV1.
+message ReadReceiptV1 {
+  repeated string message_ids = 1;
+  int64 read_at_epoch_ms = 2;
 }
 
 message ConversationEventV1 {
@@ -129,6 +138,7 @@ message ConversationEventV1 {
     RecoveryBatchV1 recovery_batch = 15;
     DeviceRevocationV1 device_revocation = 16;
     VideoMessageV1 video = 17;
+    ReadReceiptV1 read_receipt = 18 [deprecated = true];
   }
 }
 

@@ -424,6 +424,30 @@ internal fun DeleteIcon(
 )
 
 @Composable
+internal fun CopyIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M8 8h11a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2",
+        "M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun SelectionCheckIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf("m5 12 4 4L19 6"),
+    description,
+    modifier,
+    strokeWidth = 2.5f,
+)
+
+@Composable
 internal fun CloseIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),

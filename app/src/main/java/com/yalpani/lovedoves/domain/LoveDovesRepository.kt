@@ -551,6 +551,40 @@ internal class LoveDovesRepository(
         uploadOutbox(outbox)
     }
 
+    suspend fun deleteMessages(messageIds: Set<String>) = io {
+        val ids = messageIds.take(MAX_LOCAL_DELETE_BATCH).distinct()
+        if (ids.isEmpty()) return@io
+        val events = ids.mapNotNull(database.conversationDao()::get)
+        val media = events.mapNotNull { it.mediaId }
+            .flatMap { mediaId ->
+                database.mediaDao().get(mediaId)?.let { item ->
+                    listOfNotNull(item, item.thumbnailMediaId?.let(database.mediaDao()::get))
+                }.orEmpty()
+            }
+            .distinctBy { it.id }
+        database.withTransaction {
+            database.outboxDao().deleteForEvents(ids)
+            database.conversationDao().delete(ids)
+            if (media.isNotEmpty()) database.mediaDao().delete(media.map { it.id })
+        }
+        media.forEach {
+            session.media.delete(it.relativePath)
+            it.key.fill(0)
+            it.nonce.fill(0)
+        }
+    }
+
+    suspend fun markMessagesRead(messageIds: List<String>) = io {
+        val unread = messageIds.distinct().mapNotNull(database.conversationDao()::get)
+            .filter { !it.outgoing && it.deliveryState != DELIVERY_READ }
+        unread.chunked(READ_RECEIPT_BATCH_SIZE).forEach { batch ->
+            sendReadReceipt(batch.map { it.id })
+            database.withTransaction {
+                batch.forEach { database.conversationDao().updateDelivery(it.id, DELIVERY_READ) }
+            }
+        }
+    }
+
     suspend fun syncNow() = io {
         downloadIncoming()
         processInboundLocked()
@@ -690,6 +724,7 @@ internal class LoveDovesRepository(
         }
     }
 
+    @Suppress("DEPRECATION") // Reads the short-lived pre-release receipt field for migration.
     private suspend fun processInboundLocked() {
         val pending = database.pendingPairingDao().get()
         val pair = database.pairStateDao().get()
@@ -815,10 +850,42 @@ internal class LoveDovesRepository(
                         receiptFor = event.eventId
                     }
                     ConversationEventV1.PayloadCase.DELIVERY_RECEIPT -> {
-                        database.conversationDao().updateDelivery(
-                            event.deliveryReceipt.messageId,
-                            DELIVERY_DELIVERED,
-                        )
+                        val receipt = event.deliveryReceipt
+                        val messageIds = if (receipt.read) {
+                            require(receipt.messageIdsCount in 1..READ_RECEIPT_BATCH_SIZE)
+                            receipt.messageIdsList.distinct()
+                        } else {
+                            listOf(receipt.messageId)
+                        }
+                        messageIds.forEach { messageId ->
+                            require(messageId.isNotBlank())
+                            database.conversationDao().get(messageId)
+                                ?.takeIf {
+                                    it.outgoing &&
+                                        (receipt.read || it.deliveryState != DELIVERY_READ)
+                                }
+                                ?.let {
+                                    database.conversationDao().updateDelivery(
+                                        it.id,
+                                        if (receipt.read) DELIVERY_READ else DELIVERY_DELIVERED,
+                                    )
+                                }
+                        }
+                    }
+                    ConversationEventV1.PayloadCase.READ_RECEIPT -> {
+                        require(event.readReceipt.messageIdsCount in 1..READ_RECEIPT_BATCH_SIZE)
+                        require(event.readReceipt.readAtEpochMs > 0)
+                        event.readReceipt.messageIdsList.distinct().forEach { messageId ->
+                            require(messageId.isNotBlank())
+                            database.conversationDao().get(messageId)
+                                ?.takeIf { it.outgoing }
+                                ?.let {
+                                    database.conversationDao().updateDelivery(
+                                        it.id,
+                                        DELIVERY_READ,
+                                    )
+                                }
+                        }
                     }
                     ConversationEventV1.PayloadCase.PAIR_CONFIRMATION -> {
                         val current = requireNotNull(database.pendingPairingDao().get())
@@ -995,6 +1062,32 @@ internal class LoveDovesRepository(
                 DeliveryReceiptV1.newBuilder()
                     .setMessageId(messageId)
                     .setStoredAtEpochMs(System.currentTimeMillis()),
+            )
+            .build()
+        val outbox = OutboxEntity(
+            eventId,
+            "",
+            encryptEvent(event, pair.partnerAddressName),
+            0,
+            System.currentTimeMillis(),
+        )
+        database.outboxDao().put(outbox)
+        runCatching { uploadOutbox(outbox) }
+    }
+
+    private suspend fun sendReadReceipt(messageIds: List<String>) {
+        val pair = database.pairStateDao().get() ?: return
+        val eventId = UUID.randomUUID().toString()
+        val event = ConversationEventV1.newBuilder()
+            .setVersion(1)
+            .setEventId(eventId)
+            .setCreatedAtEpochMs(System.currentTimeMillis())
+            .setDeliveryReceipt(
+                DeliveryReceiptV1.newBuilder()
+                    .setMessageId(messageIds.first())
+                    .setStoredAtEpochMs(System.currentTimeMillis())
+                    .setRead(true)
+                    .addAllMessageIds(messageIds),
             )
             .build()
         val outbox = OutboxEntity(
@@ -1441,6 +1534,7 @@ internal class LoveDovesRepository(
         const val DELIVERY_SENDING = "SENDING"
         const val DELIVERY_SENT = "SENT"
         const val DELIVERY_DELIVERED = "DELIVERED"
+        const val DELIVERY_READ = "READ"
         const val DELIVERY_FAILED = "FAILED"
         const val MAX_TEXT_LENGTH = 4_000
         const val MAX_PHOTO_BYTES = EncryptedMediaStore.MAX_PLAINTEXT_BYTES
@@ -1456,6 +1550,8 @@ internal class LoveDovesRepository(
         private const val MIN_ENCRYPTED_PHOTO_BYTES = 4L + PHOTO_NONCE_BYTES + 16L
         private const val INVITE_LIFETIME_MS = 10 * 60 * 1_000L
         private const val RECOVERY_BATCH_SIZE = 1
+        private const val READ_RECEIPT_BATCH_SIZE = 256
+        private const val MAX_LOCAL_DELETE_BATCH = 1_000
         private const val MAX_RECOVERY_EVENTS = 1_000_000L
         private val UUID_PATTERN = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 

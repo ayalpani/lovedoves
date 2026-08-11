@@ -152,6 +152,9 @@ internal interface ConversationDao {
     @Query("UPDATE conversation_events SET deliveryState = :state WHERE id = :id")
     fun updateDelivery(id: String, state: String)
 
+    @Query("DELETE FROM conversation_events WHERE id IN (:ids)")
+    fun delete(ids: List<String>)
+
     @Query("DELETE FROM conversation_events")
     fun deleteAll()
 }
@@ -166,6 +169,9 @@ internal interface MediaDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insert(media: MediaEntity)
+
+    @Query("DELETE FROM media WHERE id IN (:ids)")
+    fun delete(ids: List<String>)
 
     @Query("DELETE FROM media")
     fun deleteAll()
@@ -184,6 +190,9 @@ internal interface OutboxDao {
 
     @Query("DELETE FROM outbox WHERE objectId = :objectId")
     fun delete(objectId: String)
+
+    @Query("DELETE FROM outbox WHERE eventId IN (:eventIds)")
+    fun deleteForEvents(eventIds: List<String>)
 
     @Query("DELETE FROM outbox")
     fun deleteAll()

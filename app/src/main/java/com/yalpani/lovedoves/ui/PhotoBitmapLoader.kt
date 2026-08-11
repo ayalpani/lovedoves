@@ -25,6 +25,14 @@ internal class PhotoBitmapLoader(
         maxEdge = FULL_SIZE_MAX_EDGE,
     )
 
+    fun evict(mediaIds: Collection<String>) {
+        mediaIds.forEach { mediaId ->
+            thumbnails.remove(mediaId)?.let { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
+        }
+    }
+
     override fun close() {
         val cached = thumbnails.snapshot().values
         thumbnails.evictAll()

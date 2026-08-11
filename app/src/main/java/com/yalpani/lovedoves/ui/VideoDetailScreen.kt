@@ -15,12 +15,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface as MaterialSurface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,22 +39,108 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.domain.LoveDovesController
+import com.yalpani.lovedoves.domain.LoveDovesRepository
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
-internal fun VideoDetailScreen(
-    mediaId: String,
+internal fun MediaDetailScreen(
+    messages: List<ConversationEventEntity>,
+    initialEventId: String,
+    photoBitmaps: PhotoBitmapLoader,
     controller: LoveDovesController,
     onBack: () -> Unit,
 ) {
+    val mediaMessages = remember(messages) {
+        messages.filter {
+            it.kind == LoveDovesRepository.KIND_PHOTO ||
+                it.kind == LoveDovesRepository.KIND_VIDEO
+        }
+    }
+    if (mediaMessages.isEmpty()) return
+    val initialPage = remember(mediaMessages, initialEventId) {
+        mediaMessages.indexOfFirst { it.id == initialEventId }.coerceAtLeast(0)
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage) { mediaMessages.size }
     BackHandler(onBack = onBack)
     CameraSystemBars()
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            key = { mediaMessages[it].id },
+            beyondViewportPageCount = 0,
+        ) { page ->
+            val message = mediaMessages[page]
+            val mediaId = requireNotNull(message.mediaId)
+            if (message.kind == LoveDovesRepository.KIND_PHOTO) {
+                EncryptedPhotoImage(
+                    mediaId = mediaId,
+                    photoBitmaps = photoBitmaps,
+                    contentDescription = "Foto ${page + 1} von ${mediaMessages.size}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    zoomable = true,
+                    backgroundColor = Color.Black,
+                )
+            } else {
+                VideoGalleryPage(
+                    mediaId = mediaId,
+                    page = page,
+                    pageCount = mediaMessages.size,
+                    active = pagerState.currentPage == page,
+                    photoBitmaps = photoBitmaps,
+                    controller = controller,
+                )
+            }
+        }
+        if (mediaMessages.size > 1) {
+            MaterialSurface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 18.dp),
+                color = Color.Black.copy(alpha = 0.48f),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text(
+                    text = "${pagerState.currentPage + 1} / ${mediaMessages.size}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = Color.White,
+                )
+            }
+        }
+        CameraCloseButton("Medienansicht schließen", onBack)
+    }
+}
+
+@Composable
+private fun VideoGalleryPage(
+    mediaId: String,
+    page: Int,
+    pageCount: Int,
+    active: Boolean,
+    photoBitmaps: PhotoBitmapLoader,
+    controller: LoveDovesController,
+) {
+    if (!active) {
+        EncryptedPhotoImage(
+            mediaId = mediaId,
+            photoBitmaps = photoBitmaps,
+            contentDescription = "Video ${page + 1} von $pageCount",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+            backgroundColor = Color.Black,
+        )
+        return
+    }
     val videoBytes by produceState<ByteArray?>(null, mediaId, controller) {
         value = controller.mediaBytes(mediaId)
     }
@@ -56,19 +148,18 @@ internal fun VideoDetailScreen(
         val bytes = videoBytes
         onDispose { bytes?.fill(0) }
     }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize()) {
         videoBytes?.let { bytes ->
-            MemoryVideoPlayer(bytes)
+            MemoryVideoPlayer(bytes = bytes, autoplay = true)
         } ?: CircularProgressIndicator(
             modifier = Modifier.align(Alignment.Center),
             color = Color.White,
         )
-        CameraCloseButton("Video schließen", onBack)
     }
 }
 
 @Composable
-private fun MemoryVideoPlayer(bytes: ByteArray) {
+private fun MemoryVideoPlayer(bytes: ByteArray, autoplay: Boolean) {
     var textureView by remember { mutableStateOf<TextureView?>(null) }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -149,6 +240,17 @@ private fun MemoryVideoPlayer(bytes: ByteArray) {
         }
     }
 
+    LaunchedEffect(autoplay, player) {
+        player?.let { current ->
+            if (autoplay && !current.isPlaying) {
+                current.start()
+                isPlaying = true
+            } else if (!autoplay && current.isPlaying) {
+                current.pause()
+                isPlaying = false
+            }
+        }
+    }
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             position = runCatching { player?.currentPosition?.toFloat() ?: 0f }.getOrDefault(0f)
