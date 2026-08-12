@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.down
@@ -22,6 +23,7 @@ import com.yalpani.lovedoves.LoveDovesTheme
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -31,15 +33,18 @@ class VoiceComposerTest {
 
     @Test
     fun quickTapSwitchesFromVoiceToRoundVideo() {
+        val started = AtomicBoolean(false)
+        val cancelled = AtomicBoolean(false)
         composeRule.setContent {
             var captureType by remember { mutableStateOf(ComposerCaptureType.VOICE) }
+            var mode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
             LoveDovesTheme {
                 MessageComposer(
                     text = TextFieldValue(),
                     busy = false,
                     emojiPickerVisible = false,
                     captureType = captureType,
-                    voiceMode = VoiceRecordingMode.IDLE,
+                    voiceMode = mode,
                     voiceElapsedMillis = 0L,
                     focusRequester = remember { FocusRequester() },
                     onTextChange = {},
@@ -47,8 +52,19 @@ class VoiceComposerTest {
                     onEmoji = {},
                     onAttachment = {},
                     onSend = {},
-                    onCaptureTap = { captureType = ComposerCaptureType.ROUND_VIDEO },
-                    onVoiceStart = {},
+                    onCaptureTap = {
+                        cancelled.set(true)
+                        mode = VoiceRecordingMode.IDLE
+                        captureType = if (captureType == ComposerCaptureType.VOICE) {
+                            ComposerCaptureType.ROUND_VIDEO
+                        } else {
+                            ComposerCaptureType.VOICE
+                        }
+                    },
+                    onVoiceStart = {
+                        started.set(true)
+                        mode = VoiceRecordingMode.HOLDING
+                    },
                     onVoiceCancel = {},
                     onVoiceLock = {},
                     onVoiceRelease = {},
@@ -66,6 +82,55 @@ class VoiceComposerTest {
             }
 
         composeRule.onNodeWithContentDescription("Rundes Video aufnehmen").assertExists()
+        composeRule.onNodeWithText(
+            "Hold to record video. Tap to switch to audio.",
+        ).assertExists()
+        assertTrue(started.get())
+        assertTrue(cancelled.get())
+    }
+
+    @Test
+    fun quickTapSwitchesFromRoundVideoToVoice() {
+        composeRule.setContent {
+            var captureType by remember { mutableStateOf(ComposerCaptureType.ROUND_VIDEO) }
+            var mode by remember { mutableStateOf(VoiceRecordingMode.IDLE) }
+            LoveDovesTheme {
+                MessageComposer(
+                    text = TextFieldValue(),
+                    busy = false,
+                    emojiPickerVisible = false,
+                    captureType = captureType,
+                    voiceMode = mode,
+                    voiceElapsedMillis = 0L,
+                    focusRequester = remember { FocusRequester() },
+                    onTextChange = {},
+                    onTextFocus = {},
+                    onEmoji = {},
+                    onAttachment = {},
+                    onSend = {},
+                    onCaptureTap = {
+                        mode = VoiceRecordingMode.IDLE
+                        captureType = ComposerCaptureType.VOICE
+                    },
+                    onVoiceStart = { mode = VoiceRecordingMode.HOLDING },
+                    onVoiceCancel = {},
+                    onVoiceLock = {},
+                    onVoiceRelease = {},
+                    onVoicePauseToggle = {},
+                    onVoiceSend = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("Rundes Video aufnehmen")
+            .performTouchInput {
+                down(center)
+                advanceEventTime(200L)
+                up()
+            }
+        composeRule.onNodeWithText(
+            "Hold to record audio. Tap to switch to video.",
+        ).assertExists()
     }
 
     @Test
@@ -114,7 +179,7 @@ class VoiceComposerTest {
         composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
             .performTouchInput {
                 down(center)
-                advanceEventTime(1_001L)
+                advanceEventTime(501L)
                 moveBy(Offset(0f, -320f))
                 up()
             }

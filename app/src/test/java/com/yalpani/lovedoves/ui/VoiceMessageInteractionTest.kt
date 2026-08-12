@@ -78,4 +78,10 @@ class VoiceMessageInteractionTest {
         assertEquals("0:09,9", formatVoiceRecordingDuration(9_999L))
         assertEquals("1:05,4", formatVoiceRecordingDuration(65_499L))
     }
+
+    @Test
+    fun onlyCapturesShorterThanHalfASecondSwitchMode() {
+        assertEquals(true, isQuickCapture(499L, 500L))
+        assertEquals(false, isQuickCapture(500L, 500L))
+    }
 }

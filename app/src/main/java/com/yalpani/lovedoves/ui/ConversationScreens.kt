@@ -94,7 +94,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
@@ -105,7 +104,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
@@ -633,6 +632,7 @@ internal fun ConversationScreen(
                     onSend(message)
                 },
                 onCaptureTap = {
+                    cancelActiveRecording()
                     captureType = if (captureType == ComposerCaptureType.VOICE) {
                         ComposerCaptureType.ROUND_VIDEO
                     } else {
@@ -797,6 +797,7 @@ internal fun MessageComposer(
     val recording = voiceMode != VoiceRecordingMode.IDLE
     var composerWidthPx by remember { mutableIntStateOf(0) }
     var cancelProgress by remember { mutableFloatStateOf(0f) }
+    var captureHint by remember { mutableStateOf<String?>(null) }
     val density = LocalDensity.current
     val fallbackWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val cancelThresholdPx = (composerWidthPx.takeIf { it > 0 }?.toFloat() ?: fallbackWidthPx) *
@@ -804,6 +805,12 @@ internal fun MessageComposer(
     val lockThresholdPx = with(density) { VOICE_LOCK_GESTURE_THRESHOLD.toPx() }
     LaunchedEffect(voiceMode) {
         if (voiceMode != VoiceRecordingMode.HOLDING) cancelProgress = 0f
+    }
+    LaunchedEffect(captureHint) {
+        if (captureHint != null) {
+            delay(CAPTURE_HINT_DURATION_MILLIS)
+            captureHint = null
+        }
     }
     Row(
         Modifier
@@ -891,7 +898,15 @@ internal fun MessageComposer(
             cancelThresholdPx = cancelThresholdPx,
             lockThresholdPx = lockThresholdPx,
             onSendText = onSend,
-            onCaptureTap = onCaptureTap,
+            captureHint = captureHint,
+            onCaptureTap = {
+                captureHint = if (captureType == ComposerCaptureType.VOICE) {
+                    "Hold to record video. Tap to switch to audio."
+                } else {
+                    "Hold to record audio. Tap to switch to video."
+                }
+                onCaptureTap()
+            },
             onVoiceStart = {
                 cancelProgress = 0f
                 onVoiceStart()
@@ -998,6 +1013,7 @@ private fun ComposerVoiceAction(
     cancelThresholdPx: Float,
     lockThresholdPx: Float,
     onSendText: () -> Unit,
+    captureHint: String?,
     onCaptureTap: () -> Unit,
     onVoiceStart: () -> Unit,
     onCancelProgress: (Float) -> Unit,
@@ -1022,6 +1038,36 @@ private fun ComposerVoiceAction(
             .height(48.dp),
         contentAlignment = Alignment.Center,
     ) {
+        if (captureHint != null && !recording) {
+            val hintOffset = with(LocalDensity.current) {
+                IntOffset(0, -CAPTURE_HINT_OVERLAY_OFFSET.roundToPx())
+            }
+            Popup(
+                alignment = Alignment.TopEnd,
+                offset = hintOffset,
+                properties = PopupProperties(
+                    focusable = false,
+                    dismissOnBackPress = false,
+                    dismissOnClickOutside = false,
+                    clippingEnabled = false,
+                ),
+            ) {
+                Surface(
+                    modifier = Modifier.widthIn(max = 310.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.16f)),
+                    shadowElevation = 6.dp,
+                ) {
+                    Text(
+                        text = captureHint,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        color = LoveInk,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
         if (recording && !finalizing) {
             val lockOffset = with(LocalDensity.current) {
                 IntOffset(0, -VOICE_LOCK_OVERLAY_OFFSET.roundToPx())
@@ -1160,10 +1206,12 @@ internal enum class VoiceRecordingMode { IDLE, HOLDING, LOCKED, PAUSED, FINALIZI
 private const val INPUT_SETTLE_MILLIS = 120L
 private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
-private const val CAPTURE_TAP_THRESHOLD_MILLIS = 1_000L
+private const val CAPTURE_TAP_THRESHOLD_MILLIS = 500L
+private const val CAPTURE_HINT_DURATION_MILLIS = 2_800L
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
 private val VOICE_LOCK_OVERLAY_OFFSET = 50.dp
+private val CAPTURE_HINT_OVERLAY_OFFSET = 58.dp
 
 internal fun formatVoiceRecordingDuration(durationMillis: Long): String {
     val clamped = durationMillis.coerceAtLeast(0L)
@@ -1216,24 +1264,21 @@ private fun MessageBubble(
                 modifier = Modifier.fillMaxWidth(0.82f),
                 contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                Surface(
-                    modifier = if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
-                        Modifier.size(240.dp)
-                    } else {
-                        Modifier
-                    },
-                    color = if (message.outgoing) LoveBlush else LoveMist,
-                    shape = if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
-                        CircleShape
-                    } else {
-                        RoundedCornerShape(
+                if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
+                    RoundVideoMessageBubble(
+                        message = message,
+                        photoBitmaps = photoBitmaps,
+                    )
+                } else {
+                    Surface(
+                        color = if (message.outgoing) LoveBlush else LoveMist,
+                        shape = RoundedCornerShape(
                             topStart = 22.dp,
                             topEnd = 22.dp,
                             bottomStart = if (message.outgoing) 22.dp else 6.dp,
                             bottomEnd = if (message.outgoing) 6.dp else 22.dp,
-                        )
-                    },
-                ) {
+                        ),
+                    ) {
                     when (message.kind) {
                     LoveDovesRepository.KIND_PHOTO -> {
                         val mediaId = requireNotNull(message.mediaId)
@@ -1249,7 +1294,10 @@ private fun MessageBubble(
                                 modifier = Modifier.fillMaxWidth().height(260.dp),
                                 contentScale = ContentScale.Crop,
                             )
-                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
+                            MessageMediaMetadata(
+                                message,
+                                Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                            )
                         }
                     }
                     LoveDovesRepository.KIND_VIDEO -> {
@@ -1281,34 +1329,10 @@ private fun MessageBubble(
                                     PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
                                 }
                             }
-                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
-                        }
-                    }
-                    LoveDovesRepository.KIND_ROUND_VIDEO -> {
-                        val mediaId = requireNotNull(message.mediaId)
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            EncryptedPhotoImage(
-                                mediaId = mediaId,
-                                photoBitmaps = photoBitmaps,
-                                contentDescription = if (message.outgoing) {
-                                    "Gesendetes rundes Video"
-                                } else {
-                                    "Empfangenes rundes Video"
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
+                            MessageMediaMetadata(
+                                message,
+                                Modifier.align(Alignment.BottomEnd).padding(8.dp),
                             )
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.Black.copy(alpha = 0.42f),
-                                contentColor = Color.White,
-                                modifier = Modifier.size(52.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    PlayIcon(modifier = Modifier.size(24.dp), color = Color.White)
-                                }
-                            }
-                            MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
                         }
                     }
                     LoveDovesRepository.KIND_VOICE -> {
@@ -1320,6 +1344,7 @@ private fun MessageBubble(
                         )
                     }
                     else -> MessageText(message)
+                    }
                     }
                 }
             }
@@ -1355,45 +1380,81 @@ private fun MessageBubble(
 }
 
 @Composable
+private fun RoundVideoMessageBubble(
+    message: ConversationEventEntity,
+    photoBitmaps: PhotoBitmapLoader,
+) {
+    val mediaId = requireNotNull(message.mediaId)
+    Box(Modifier.size(252.dp)) {
+        Surface(
+            modifier = Modifier.size(240.dp).align(Alignment.TopStart),
+            color = if (message.outgoing) LoveBlush else LoveMist,
+            shape = CircleShape,
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EncryptedPhotoImage(
+                    mediaId = mediaId,
+                    photoBitmaps = photoBitmaps,
+                    contentDescription = if (message.outgoing) {
+                        "Gesendetes rundes Video"
+                    } else {
+                        "Empfangenes rundes Video"
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.42f),
+                    contentColor = Color.White,
+                    modifier = Modifier.size(52.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        PlayIcon(modifier = Modifier.size(24.dp), color = Color.White)
+                    }
+                }
+            }
+        }
+        MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd))
+    }
+}
+
+@Composable
 private fun MessageText(message: ConversationEventEntity) {
-    val metadataColor = MaterialTheme.colorScheme.onSurfaceVariant
     val metadata = messageMetadata(message)
-    val inlineId = "delivery-state"
+    val inlineId = "message-metadata"
     Text(
         text = buildAnnotatedString {
             append(message.body.orEmpty())
             append("\u00A0\u00A0")
-            pushStyle(
-                SpanStyle(
-                    color = metadataColor,
-                    fontSize = MaterialTheme.typography.labelSmall.fontSize,
+            appendInlineContent(
+                id = inlineId,
+                alternateText = listOf(
+                    formatTime(message.createdAtEpochMillis),
+                    metadata.description,
+                ).filter(String::isNotEmpty).joinToString(" "),
+            )
+        },
+        inlineContent = mapOf(
+            inlineId to InlineTextContent(
+                Placeholder(
+                    width = if (metadata.visual == null) 38.sp else 58.sp,
+                    height = 18.sp,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
                 ),
-            )
-            append(formatTime(message.createdAtEpochMillis))
-            if (metadata.visual != null) {
-                append("\u00A0")
-                appendInlineContent(inlineId, metadata.description)
-            }
-            pop()
-        },
-        inlineContent = if (metadata.visual == null) {
-            emptyMap()
-        } else {
-            mapOf(
-                inlineId to InlineTextContent(
-                    Placeholder(
-                        width = 1.5.em,
-                        height = 1.5.em,
-                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
-                    ),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterEnd,
                 ) {
-                    DeliveryStateIcon(
-                        visual = metadata.visual,
-                        modifier = Modifier.fillMaxSize(),
+                    MessageMetadataRow(
+                        message = message,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        onDarkSurface = false,
                     )
-                },
-            )
-        },
+                }
+            },
+        ),
         modifier = Modifier
             .padding(horizontal = 18.dp, vertical = 12.dp)
             .semantics {
@@ -1408,43 +1469,39 @@ private fun MessageMediaMetadata(
     message: ConversationEventEntity,
     modifier: Modifier = Modifier,
 ) {
-    val metadata = messageMetadata(message)
     Surface(
-        modifier = modifier.padding(8.dp),
+        modifier = modifier,
         color = Color.Black.copy(alpha = 0.52f),
         shape = RoundedCornerShape(10.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 7.dp, vertical = 3.dp)
-                .semantics {
-                    if (metadata.description.isNotEmpty()) stateDescription = metadata.description
-                },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = formatTime(message.createdAtEpochMillis),
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-            )
-            metadata.visual?.let {
-                DeliveryStateIcon(
-                    visual = it,
-                    modifier = Modifier.size(width = 17.dp, height = 12.dp),
-                    onDarkSurface = true,
-                )
-            }
-        }
+        MessageMetadataRow(
+            message = message,
+            color = Color.White,
+            onDarkSurface = true,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+        )
     }
 }
 
 @Composable
 private fun CompactMessageMetadata(message: ConversationEventEntity) {
+    MessageMetadataRow(
+        message = message,
+        color = LoveInk.copy(alpha = 0.58f),
+        onDarkSurface = false,
+    )
+}
+
+@Composable
+private fun MessageMetadataRow(
+    message: ConversationEventEntity,
+    color: Color,
+    onDarkSurface: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val metadata = messageMetadata(message)
     Row(
-        modifier = Modifier.semantics {
+        modifier = modifier.semantics {
             if (metadata.description.isNotEmpty()) stateDescription = metadata.description
         },
         verticalAlignment = Alignment.CenterVertically,
@@ -1452,13 +1509,15 @@ private fun CompactMessageMetadata(message: ConversationEventEntity) {
     ) {
         Text(
             formatTime(message.createdAtEpochMillis),
-            color = LoveInk.copy(alpha = 0.58f),
+            color = color,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
         )
         metadata.visual?.let {
             DeliveryStateIcon(
                 visual = it,
                 modifier = Modifier.size(width = 17.dp, height = 12.dp),
+                onDarkSurface = onDarkSurface,
             )
         }
     }

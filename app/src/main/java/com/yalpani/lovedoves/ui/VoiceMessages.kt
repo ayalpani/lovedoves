@@ -47,7 +47,6 @@ import com.yalpani.lovedoves.domain.PreparedVoice
 import java.io.Closeable
 import kotlin.math.abs
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class VoiceGestureDecision { NONE, CANCEL, LOCK }
 
@@ -72,6 +71,9 @@ internal fun voiceCancelProgress(
     0f
 }
 
+internal fun isQuickCapture(durationMillis: Long, thresholdMillis: Long): Boolean =
+    durationMillis < thresholdMillis
+
 internal fun Modifier.voiceRecordGesture(
     enabled: Boolean,
     contentDescription: String,
@@ -90,38 +92,11 @@ internal fun Modifier.voiceRecordGesture(
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
-            val downRealtime = SystemClock.uptimeMillis()
-            var started = false
+            onStart()
             var completed = false
             while (!completed) {
-                val remaining = tapThresholdMillis - (SystemClock.uptimeMillis() - downRealtime)
-                if (!started && remaining <= 0L) {
-                    onStart()
-                    started = true
-                    continue
-                }
-                val event = if (!started) {
-                    withTimeoutOrNull(remaining) { awaitPointerEvent() }
-                } else awaitPointerEvent()
-                if (event == null) {
-                    onStart()
-                    started = true
-                    continue
-                }
+                val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (
-                    !started &&
-                    change.uptimeMillis - down.uptimeMillis >= tapThresholdMillis
-                ) {
-                    onStart()
-                    started = true
-                }
-                if (!started && !change.pressed) {
-                    onTap()
-                    change.consume()
-                    break
-                }
-                if (!started) continue
                 val deltaX = change.position.x - down.position.x
                 val deltaY = change.position.y - down.position.y
                 onCancelProgress(
@@ -148,7 +123,11 @@ internal fun Modifier.voiceRecordGesture(
                         completed = true
                     }
                     VoiceGestureDecision.NONE -> if (!change.pressed) {
-                        onRelease()
+                        if (isQuickCapture(change.uptimeMillis - down.uptimeMillis, tapThresholdMillis)) {
+                            onTap()
+                        } else {
+                            onRelease()
+                        }
                         completed = true
                     }
                 }
