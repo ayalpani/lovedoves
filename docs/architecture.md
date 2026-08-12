@@ -53,10 +53,12 @@ aktiv.
 ## Transport
 
 Der Relay kennt zufällige Mailbox- und Objekt-IDs, gehashte Read-/Write-
-Capabilities, Größe, Ablaufzeit und optional eine FCM-Installations-ID. Bodies sind
-undurchsichtig. Ein erfolgreicher Download wird erst nach dem fsync-gesicherten
-lokalen Spool bestätigt. ACKs löschen logisch sofort; der Aufräumer entfernt
-Reste und spätestens nach 72 Stunden abgelaufene Objekte.
+Capabilities, Größe, eine auf volle Stunden reduzierte Ablaufzeit und optional
+eine FCM-Installations-ID. Bodies sind undurchsichtig. Ein erfolgreicher Download
+wird erst nach dem fsync-gesicherten lokalen Spool bestätigt. ACKs löschen
+Objekt und Metadaten sofort. SQLite überschreibt gelöschte Zellen und der Relay
+trunkiert danach sein Write-Ahead-Log; der Aufräumer entfernt Reste und spätestens
+nach 72 Stunden abgelaufene Objekte.
 
 WebRTC ist nicht Teil des Nachrichtenwegs. Es bleibt für spätere Anrufe oder
 große synchrone Direktübertragungen reserviert.

@@ -73,6 +73,10 @@ func OpenStore(root string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := store.truncateWAL(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
 	_ = os.Chmod(filepath.Join(root, "relay.db"), 0o600)
 	return store, nil
 }
@@ -83,6 +87,7 @@ func (s *Store) initialize(ctx context.Context) error {
 	const schema = `
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
+PRAGMA secure_delete=ON;
 CREATE TABLE IF NOT EXISTS metadata (
   key TEXT PRIMARY KEY,
   value BLOB NOT NULL
@@ -116,6 +121,11 @@ CREATE TABLE IF NOT EXISTS rendezvous (
   ready INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS rendezvous_expiry ON rendezvous(expires_at);
+UPDATE mailboxes SET created_at = 0 WHERE created_at <> 0;
+UPDATE objects
+SET created_at = 0,
+    expires_at = (expires_at / 3600000) * 3600000
+WHERE created_at <> 0 OR expires_at % 3600000 <> 0;
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("initialize relay database: %w", err)
@@ -176,14 +186,13 @@ func (s *Store) CreateMailbox(ctx context.Context, token, bootstrapToken string)
 		return MailboxCredentials{}, err
 	}
 	defer tx.Rollback()
-	now := s.now().UnixMilli()
 	if _, err := tx.ExecContext(
 		ctx,
 		"INSERT INTO mailboxes(id, read_hash, write_hash, created_at) VALUES(?, ?, ?, ?)",
 		credentials.ID,
 		hashCapability(credentials.ReadCapability),
 		hashCapability(credentials.WriteCapability),
-		now,
+		0,
 	); err != nil {
 		return MailboxCredentials{}, err
 	}
@@ -201,6 +210,11 @@ func (s *Store) CreateMailbox(ctx context.Context, token, bootstrapToken string)
 	}
 	if err := tx.Commit(); err != nil {
 		return MailboxCredentials{}, err
+	}
+	if count != 0 {
+		if err := s.truncateWAL(ctx); err != nil {
+			return MailboxCredentials{}, err
+		}
 	}
 	return credentials, nil
 }
@@ -308,6 +322,9 @@ func (s *Store) PreparePartnerReplacement(
 		seen[mailboxID] = struct{}{}
 		_ = os.Remove(filepath.Join(s.root, "objects", mailboxID))
 	}
+	if err := s.truncateWAL(ctx); err != nil {
+		return PartnerReplacementCredentials{}, err
+	}
 	return PartnerReplacementCredentials{
 		PartnerEnrollmentToken: enrollment,
 		OwnWriteCapability:     writeCapability,
@@ -386,8 +403,8 @@ func (s *Store) PutObject(ctx context.Context, mailboxID, objectID string, body 
 		written,
 		digest,
 		relativePath,
-		now.UnixMilli(),
-		now.Add(72*time.Hour).UnixMilli(),
+		0,
+		now.Add(72*time.Hour).Truncate(time.Hour).UnixMilli(),
 	)
 	if err != nil {
 		os.Remove(finalName)
@@ -400,7 +417,7 @@ func (s *Store) ListObjects(ctx context.Context, mailboxID string) ([]ObjectMeta
 	rows, err := s.db.QueryContext(
 		ctx,
 		`SELECT object_id, size, created_at, expires_at, cipher_sha256
-		 FROM objects WHERE mailbox_id = ? AND expires_at > ? ORDER BY created_at, object_id`,
+		 FROM objects WHERE mailbox_id = ? AND expires_at > ? ORDER BY rowid`,
 		mailboxID,
 		s.now().UnixMilli(),
 	)
@@ -468,10 +485,12 @@ func (s *Store) AckObject(ctx context.Context, mailboxID, objectID string) error
 	if err := os.Remove(filepath.Join(s.root, relativePath)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return nil
+	return s.truncateWAL(ctx)
 }
 
 func (s *Store) SetPushToken(ctx context.Context, mailboxID, token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result, err := s.db.ExecContext(ctx, "UPDATE mailboxes SET push_token = ? WHERE id = ?", token, mailboxID)
 	if err != nil {
 		return err
@@ -480,7 +499,7 @@ func (s *Store) SetPushToken(ctx context.Context, mailboxID, token string) error
 	if changed != 1 {
 		return ErrNotFound
 	}
-	return nil
+	return s.truncateWAL(ctx)
 }
 
 func (s *Store) PushToken(ctx context.Context, mailboxID string) (string, error) {
@@ -518,7 +537,7 @@ func (s *Store) DeleteMailbox(ctx context.Context, mailboxID string) error {
 		_ = os.Remove(filepath.Join(s.root, path))
 	}
 	_ = os.Remove(filepath.Join(s.root, "objects", mailboxID))
-	return nil
+	return s.truncateWAL(ctx)
 }
 
 func (s *Store) CreateRendezvous(ctx context.Context, id, capability string) error {
@@ -642,7 +661,7 @@ func (s *Store) DeleteRendezvous(ctx context.Context, id, capability string) err
 	if relative.Valid {
 		_ = os.Remove(filepath.Join(s.root, relative.String))
 	}
-	return nil
+	return s.truncateWAL(ctx)
 }
 
 func (s *Store) CleanupExpired(ctx context.Context) error {
@@ -673,6 +692,21 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 		for _, path := range paths {
 			_ = os.Remove(filepath.Join(s.root, path))
 		}
+	}
+	return s.truncateWAL(ctx)
+}
+
+func (s *Store) truncateWAL(ctx context.Context) error {
+	var busy, logPages, checkpointedPages int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(
+		&busy,
+		&logPages,
+		&checkpointedPages,
+	); err != nil {
+		return fmt.Errorf("truncate relay database WAL: %w", err)
+	}
+	if busy != 0 || logPages != 0 || checkpointedPages != 0 {
+		return fmt.Errorf("truncate relay database WAL: checkpoint incomplete")
 	}
 	return nil
 }

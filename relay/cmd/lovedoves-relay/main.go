@@ -25,10 +25,6 @@ func main() {
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	bootstrapToken := os.Getenv("LOVE_DOVES_BOOTSTRAP_TOKEN")
-	if bootstrapToken == "" {
-		logger.Error("LOVE_DOVES_BOOTSTRAP_TOKEN is required")
-		os.Exit(1)
-	}
 	dataDirectory := envOr("LOVE_DOVES_DATA_DIR", "./data")
 	store, err := relay.OpenStore(dataDirectory)
 	if err != nil {

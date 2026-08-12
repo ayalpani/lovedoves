@@ -10,15 +10,17 @@ Erforderliche Umgebungsvariablen:
 ```text
 LOVE_DOVES_LISTEN_ADDR=127.0.0.1:8787
 LOVE_DOVES_DATA_DIR=/opt/lovedoves/data
-LOVE_DOVES_BOOTSTRAP_TOKEN=<32 zufällige Bytes, base64url>
+LOVE_DOVES_BOOTSTRAP_TOKEN=<nur für die erste Mailbox: 32 zufällige Bytes, base64url>
 FCM_PROJECT_ID=<optional>
 GOOGLE_APPLICATION_CREDENTIALS=<optionaler externer Pfad>
 ```
 
 Das Token entsteht mit `go run ./cmd/lovedoves-relay bootstrap-token` im
-Verzeichnis `relay/`. Es wird nie committed. Der Release-Build enthält immer
-ein leeres Bootstrap-Feld; das Token wird bei der einmaligen Einrichtung
-manuell verwendet.
+Verzeichnis `relay/`. Es wird nie committed. Nach erfolgreicher Erzeugung der
+ersten Mailbox wird `LOVE_DOVES_BOOTSTRAP_TOKEN` aus `relay.env` entfernt und
+der Container neu erstellt. Die bestehende Paarung funktioniert ohne das
+bereits verbrauchte Token weiter; eine leere Datenbank akzeptiert ohne Token
+keine erste Mailbox.
 
 Vor Freigabe sind TLS, `/healthz`, Requestgrößen, Dateirechte `0700`,
 Container-Sandboxing, Nginx-Bodylimit und die generische FCM-Nachricht zu prüfen.

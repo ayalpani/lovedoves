@@ -3,10 +3,13 @@ package relay
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -49,6 +52,9 @@ func TestMailboxObjectLifecycle(t *testing.T) {
 	if len(listing.Objects) != 1 || listing.Objects[0].ID != objectID {
 		t.Fatalf("unexpected listing: %+v", listing.Objects)
 	}
+	if listing.Objects[0].CreatedAt != 0 || listing.Objects[0].ExpiresAt%int64(time.Hour/time.Millisecond) != 0 {
+		t.Fatalf("object timestamps were not minimized: %+v", listing.Objects[0])
+	}
 
 	request = authenticatedRequest(
 		http.MethodGet,
@@ -73,6 +79,7 @@ func TestMailboxObjectLifecycle(t *testing.T) {
 	if _, _, err := store.OpenObject(t.Context(), second.ID, objectID); err != ErrNotFound {
 		t.Fatalf("object remains after ack: %v", err)
 	}
+	assertWALTruncated(t, store)
 }
 
 func TestCapabilitiesRejectWrongRole(t *testing.T) {
@@ -87,6 +94,11 @@ func TestCapabilitiesRejectWrongRole(t *testing.T) {
 	if response := serve(server, request); response.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong capability status = %d", response.Code)
 	}
+}
+
+func TestEmptyBootstrapTokenRejectsFirstMailbox(t *testing.T) {
+	server, _ := testServerWithBootstrap(t, "")
+	createMailbox(t, server, "", http.StatusUnauthorized)
 }
 
 func TestPartnerReplacementRevokesOldMailboxAndWriteCapability(t *testing.T) {
@@ -150,7 +162,7 @@ func TestPartnerReplacementRevokesOldMailboxAndWriteCapability(t *testing.T) {
 }
 
 func TestRendezvousLifecycle(t *testing.T) {
-	server, _ := testServer(t)
+	server, store := testServer(t)
 	id := "rendezvous-0000000001"
 	capability := "remote-pairing-capability"
 	request := authenticatedRequest(http.MethodPut, "/v1/rendezvous/"+id, capability, nil)
@@ -177,6 +189,7 @@ func TestRendezvousLifecycle(t *testing.T) {
 	if response := serve(server, request); response.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d", response.Code)
 	}
+	assertWALTruncated(t, store)
 }
 
 func TestExpiredObjectsAreRemoved(t *testing.T) {
@@ -205,9 +218,28 @@ func TestExpiredObjectsAreRemoved(t *testing.T) {
 	if len(objects) != 0 {
 		t.Fatalf("expired objects remain: %+v", objects)
 	}
+	assertWALTruncated(t, store)
+}
+
+func assertWALTruncated(t *testing.T, store *Store) {
+	t.Helper()
+	info, err := os.Stat(filepath.Join(store.root, "relay.db-wal"))
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("relay.db-wal retains %d bytes after deletion", info.Size())
+	}
 }
 
 func testServer(t *testing.T) (http.Handler, *Store) {
+	return testServerWithBootstrap(t, "bootstrap-secret")
+}
+
+func testServerWithBootstrap(t *testing.T, bootstrapToken string) (http.Handler, *Store) {
 	t.Helper()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
@@ -215,7 +247,7 @@ func testServer(t *testing.T) (http.Handler, *Store) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewServer(store, "bootstrap-secret", nil, logger).Handler(), store
+	return NewServer(store, bootstrapToken, nil, logger).Handler(), store
 }
 
 func createMailbox(t *testing.T, server http.Handler, token string, expectedStatus int) MailboxCredentials {
