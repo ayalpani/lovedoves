@@ -1,5 +1,6 @@
 package com.yalpani.lovedoves.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.down
 import androidx.compose.ui.test.moveBy
 import androidx.compose.ui.test.up
 import androidx.compose.ui.platform.testTag
+import androidx.test.core.app.ApplicationProvider
 import com.yalpani.lovedoves.LoveDovesTheme
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertFalse
@@ -30,6 +32,17 @@ import org.junit.Test
 class VoiceComposerTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun keyboardHeightIsPersistedPerOrientation() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        ComposerInputPreferences.persistKeyboardHeightPx(context, 10_001, 812)
+        ComposerInputPreferences.persistKeyboardHeightPx(context, 10_002, 421)
+
+        assertEquals(812, ComposerInputPreferences.keyboardHeightPx(context, 10_001))
+        assertEquals(421, ComposerInputPreferences.keyboardHeightPx(context, 10_002))
+    }
 
     @Test
     fun quickTapSwitchesFromVoiceToRoundVideo() {

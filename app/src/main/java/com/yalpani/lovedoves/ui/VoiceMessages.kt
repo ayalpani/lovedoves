@@ -15,11 +15,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -295,12 +295,7 @@ internal fun VoiceMessageContent(
         onDispose { loadedBytes?.fill(0) }
     }
     if (loadedBytes == null) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-        }
+        MessageLoadingPlaceholder(Modifier.voiceMessageFrame())
         return
     }
     MemoryVoicePlayer(
@@ -358,7 +353,7 @@ private fun MemoryVoicePlayer(
 
     Column(
         modifier = Modifier
-            .widthIn(min = 220.dp, max = 286.dp)
+            .voiceMessageFrame()
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         Row(
@@ -416,3 +411,8 @@ private fun MemoryVoicePlayer(
         }
     }
 }
+
+private fun Modifier.voiceMessageFrame(): Modifier =
+    widthIn(min = 220.dp, max = 286.dp)
+        .fillMaxWidth()
+        .height(82.dp)

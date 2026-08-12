@@ -33,3 +33,23 @@ internal enum class ChatBackgroundOption(
         private const val BACKGROUND_KEY = "chat-background"
     }
 }
+
+internal object ComposerInputPreferences {
+    fun keyboardHeightPx(context: Context, orientation: Int): Int =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getInt(key(orientation), 0)
+            .coerceAtLeast(0)
+
+    fun persistKeyboardHeightPx(context: Context, orientation: Int, heightPx: Int) {
+        if (heightPx <= 0) return
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(key(orientation), heightPx)
+            .apply()
+    }
+
+    private fun key(orientation: Int): String = "$KEY_PREFIX-$orientation"
+
+    private const val PREFERENCES = "love-doves-input"
+    private const val KEY_PREFIX = "keyboard-height-px"
+}

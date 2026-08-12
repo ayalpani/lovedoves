@@ -147,19 +147,25 @@ internal fun ConversationScreen(
     onSystemPermissionPrompt: (Boolean) -> Unit,
     onError: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
     var text by remember { mutableStateOf(TextFieldValue()) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var inputTransition by remember { mutableStateOf(ComposerInputTransition.NONE) }
     var openAttachmentWhenImeCloses by remember { mutableStateOf(false) }
     var mediaToOpenWhenImeCloses by remember { mutableStateOf<String?>(null) }
-    var lastKeyboardHeightPx by remember { mutableIntStateOf(0) }
+    var lastKeyboardHeightPx by remember(context, configuration.orientation) {
+        mutableIntStateOf(
+            ComposerInputPreferences.keyboardHeightPx(context, configuration.orientation),
+        )
+    }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
     var confirmDeleteSelection by remember { mutableStateOf(false) }
     val deleteSelectionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    val context = LocalContext.current
     val voiceRecorder = remember(context) { MemoryVoiceRecorder(context.applicationContext) }
     val roundVideoRecorder = remember(context) {
         MemoryRoundVideoRecorder(context.applicationContext)
@@ -286,8 +292,16 @@ internal fun ConversationScreen(
             recordingCues.close()
         }
     }
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
+    fun retainKeyboardHeight(heightPx: Int) {
+        if (heightPx <= 0 || heightPx == lastKeyboardHeightPx) return
+        lastKeyboardHeightPx = heightPx
+        ComposerInputPreferences.persistKeyboardHeightPx(
+            context = context,
+            orientation = configuration.orientation,
+            heightPx = heightPx,
+        )
+    }
+
     val imeHeightPx = (
         WindowInsets.ime.getBottom(density) -
             WindowInsets.navigationBars.getBottom(density)
@@ -370,7 +384,8 @@ internal fun ConversationScreen(
             mediaToOpenWhenImeCloses == null &&
             imeHeightPx > 0
         ) {
-            lastKeyboardHeightPx = imeHeightPx
+            delay(INPUT_SETTLE_MILLIS)
+            retainKeyboardHeight(imeHeightPx)
         }
     }
     LaunchedEffect(inputTransition) {
@@ -393,7 +408,7 @@ internal fun ConversationScreen(
             }
             inputTransition == ComposerInputTransition.TO_KEYBOARD && imeHeightPx > 0 -> {
                 delay(INPUT_SETTLE_MILLIS)
-                lastKeyboardHeightPx = imeHeightPx
+                retainKeyboardHeight(imeHeightPx)
                 showEmojiPicker = false
                 delay(EMOJI_EXIT_MILLIS.toLong())
                 inputTransition = ComposerInputTransition.NONE
@@ -608,7 +623,7 @@ internal fun ConversationScreen(
                     if (showEmojiPicker) {
                         inputTransition = ComposerInputTransition.TO_KEYBOARD
                     } else {
-                        if (imeHeightPx > 0) lastKeyboardHeightPx = imeHeightPx
+                        retainKeyboardHeight(imeHeightPx)
                         focusRequester.requestFocus()
                         showEmojiPicker = true
                         inputTransition = if (imeHeightPx > 0) {
@@ -1940,7 +1955,7 @@ internal fun EncryptedPhotoImage(
     }
     Box(modifier.background(backgroundColor), contentAlignment = Alignment.Center) {
         if (rendered == null) {
-            CircularProgressIndicator()
+            MessageLoadingPlaceholder(Modifier.fillMaxSize())
         } else if (zoomable) {
             ZoomablePhoto(
                 bitmap = rendered,
@@ -1957,6 +1972,24 @@ internal fun EncryptedPhotoImage(
             )
         }
     }
+}
+
+@Composable
+internal fun MessageLoadingPlaceholder(modifier: Modifier = Modifier) {
+    val alpha by rememberInfiniteTransition(label = "message loading pulse").animateFloat(
+        initialValue = 0.05f,
+        targetValue = 0.13f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "message loading alpha",
+    )
+    Box(
+        modifier = modifier
+            .background(LoveInk.copy(alpha = alpha))
+            .semantics { stateDescription = "Wird geladen" },
+    )
 }
 
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
