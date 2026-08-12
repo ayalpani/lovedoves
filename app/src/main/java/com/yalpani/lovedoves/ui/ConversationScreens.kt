@@ -23,6 +23,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.height
@@ -55,6 +57,8 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -79,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -135,6 +140,9 @@ internal fun ConversationScreen(
     voiceBytes: suspend (String) -> ByteArray,
     chatBackground: Color,
     busy: Boolean,
+    replyToMessageId: String?,
+    onReplyToMessage: (String) -> Unit,
+    onCancelReply: () -> Unit,
     onSend: (String) -> Unit,
     onSendVoice: (PreparedVoice) -> Unit,
     onSendRoundVideo: (PreparedVideo) -> Unit,
@@ -143,6 +151,8 @@ internal fun ConversationScreen(
     onRetry: (String) -> Unit,
     onMedia: (String) -> Unit,
     onDeleteMessages: (Set<String>) -> Unit,
+    onEditMessage: (String, String) -> Unit,
+    onSetPinned: (String, Boolean) -> Unit,
     onMessagesSeen: (List<String>) -> Unit,
     onSystemPermissionPrompt: (Boolean) -> Unit,
     onError: (String) -> Unit,
@@ -161,7 +171,10 @@ internal fun ConversationScreen(
         )
     }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
-    var confirmDeleteSelection by remember { mutableStateOf(false) }
+    var actionMessageId by remember { mutableStateOf<String?>(null) }
+    var editingMessageId by remember { mutableStateOf<String?>(null) }
+    var deleteTargetIds by remember { mutableStateOf(emptySet<String>()) }
+    var scrollToMessageId by remember { mutableStateOf<String?>(null) }
     val deleteSelectionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -324,6 +337,12 @@ internal fun ConversationScreen(
     val emojiSearchImeVisible =
         showEmojiPicker && inputTransition == ComposerInputTransition.NONE && imeHeightPx > 0
     val listState = rememberLazyListState()
+    val messagesById = remember(messages) { messages.associateBy(ConversationEventEntity::id) }
+    val replyTarget = replyToMessageId?.let(messagesById::get)
+    val editingMessage = editingMessageId?.let(messagesById::get)
+    val pinnedMessage = messages.asSequence()
+        .filter(ConversationEventEntity::pinned)
+        .maxByOrNull(ConversationEventEntity::pinUpdatedAtEpochMillis)
     var initialMessagesPositioned by remember { mutableStateOf(false) }
     val newestMessage = messages.lastOrNull()
     LaunchedEffect(newestMessage?.id) {
@@ -339,11 +358,20 @@ internal fun ConversationScreen(
             }
         }
     }
+    LaunchedEffect(scrollToMessageId, messages) {
+        val targetId = scrollToMessageId ?: return@LaunchedEffect
+        val index = messages.asReversed().indexOfFirst { it.id == targetId }
+        if (index >= 0) listState.animateScrollToItem(index)
+        scrollToMessageId = null
+    }
     val unreadIncomingIds = messages
         .filter { !it.outgoing && it.deliveryState != LoveDovesRepository.DELIVERY_READ }
         .map { it.id }
     LaunchedEffect(unreadIncomingIds) {
         if (unreadIncomingIds.isNotEmpty()) onMessagesSeen(unreadIncomingIds)
+    }
+    LaunchedEffect(editingMessageId, editingMessage) {
+        if (editingMessageId != null && editingMessage == null) editingMessageId = null
     }
     BackHandler(enabled = selectedMessageIds.isNotEmpty()) {
         selectedMessageIds = emptySet()
@@ -455,6 +483,26 @@ internal fun ConversationScreen(
         keyboard?.hide()
         selectedMessageIds = selectedMessageIds + messageId
     }
+    fun focusComposer() {
+        showEmojiPicker = false
+        inputTransition = ComposerInputTransition.TO_KEYBOARD
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    fun beginReply(messageId: String) {
+        actionMessageId = null
+        editingMessageId = null
+        onReplyToMessage(messageId)
+        focusComposer()
+    }
+    fun beginEdit(message: ConversationEventEntity) {
+        val body = message.body ?: return
+        actionMessageId = null
+        onCancelReply()
+        editingMessageId = message.id
+        text = TextFieldValue(body, selection = TextRange(body.length))
+        focusComposer()
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         if (selectedMessageIds.isNotEmpty()) {
             Row(
@@ -484,7 +532,7 @@ internal fun ConversationScreen(
                 ) {
                     CopyIcon("Text kopieren")
                 }
-                IconButton(onClick = { confirmDeleteSelection = true }) {
+                IconButton(onClick = { deleteTargetIds = selectedMessageIds }) {
                     DeleteIcon("Ausgewählte Nachrichten löschen")
                 }
             }
@@ -520,6 +568,12 @@ internal fun ConversationScreen(
                     SettingsIcon("Einstellungen", Modifier.size(28.dp))
                 }
             }
+        }
+        if (selectedMessageIds.isEmpty() && pinnedMessage != null) {
+            PinnedMessageBanner(
+                message = pinnedMessage,
+                onClick = { scrollToMessageId = pinnedMessage.id },
+            )
         }
         Box(
             Modifier
@@ -563,10 +617,24 @@ internal fun ConversationScreen(
                     items(messages.asReversed(), key = { it.id }) { message ->
                         MessageBubble(
                             message = message,
+                            replyTarget = message.replyToId?.let(messagesById::get),
                             photoBitmaps = photoBitmaps,
                             voiceBytes = voiceBytes,
                             selected = message.id in selectedMessageIds,
                             selectionMode = selectedMessageIds.isNotEmpty(),
+                            actionMenuVisible = actionMessageId == message.id,
+                            onShowActions = { actionMessageId = message.id },
+                            onDismissActions = { actionMessageId = null },
+                            onReply = { beginReply(message.id) },
+                            onPin = {
+                                actionMessageId = null
+                                onSetPinned(message.id, !message.pinned)
+                            },
+                            onEdit = { beginEdit(message) },
+                            onDelete = {
+                                actionMessageId = null
+                                deleteTargetIds = setOf(message.id)
+                            },
                             onRetry = onRetry,
                             onOpenMedia = {
                                 cancelActiveRecording()
@@ -599,9 +667,25 @@ internal fun ConversationScreen(
                 .navigationBarsPadding()
                 .then(if (emojiSearchImeVisible) Modifier.imePadding() else Modifier),
         ) {
+            when {
+                editingMessage != null -> ComposerContextBar(
+                    title = "Edit",
+                    preview = messagePreview(editingMessage),
+                    onClose = {
+                        editingMessageId = null
+                        text = TextFieldValue()
+                    },
+                )
+                replyTarget != null -> ComposerContextBar(
+                    title = "Reply",
+                    preview = messagePreview(replyTarget),
+                    onClose = onCancelReply,
+                )
+            }
             MessageComposer(
                 text = text,
                 busy = busy,
+                attachmentEnabled = editingMessage == null,
                 emojiPickerVisible = showEmojiPicker,
                 captureType = captureType,
                 voiceMode = voiceMode,
@@ -644,7 +728,13 @@ internal fun ConversationScreen(
                 onSend = {
                     val message = text.text
                     text = TextFieldValue()
-                    onSend(message)
+                    val editId = editingMessageId
+                    if (editId == null) {
+                        onSend(message)
+                    } else {
+                        editingMessageId = null
+                        onEditMessage(editId, message)
+                    }
                 },
                 onCaptureTap = {
                     cancelActiveRecording()
@@ -750,16 +840,16 @@ internal fun ConversationScreen(
             }
         }
     }
-    if (confirmDeleteSelection) {
+    if (deleteTargetIds.isNotEmpty()) {
         LoveModalBottomSheet(
-            onDismissRequest = { confirmDeleteSelection = false },
+            onDismissRequest = { deleteTargetIds = emptySet() },
             sheetState = deleteSelectionSheetState,
         ) {
             SettingsSheetContent(
-                title = if (selectedMessageIds.size == 1) {
+                title = if (deleteTargetIds.size == 1) {
                     "Nachricht löschen?"
                 } else {
-                    "${selectedMessageIds.size} Nachrichten löschen?"
+                    "${deleteTargetIds.size} Nachrichten löschen?"
                 },
                 description = "Die Auswahl wird nur von diesem Gerät gelöscht. Bereits empfangene Inhalte bleiben auf dem Partnergerät erhalten.",
             ) {
@@ -768,18 +858,18 @@ internal fun ConversationScreen(
                     destructive = true,
                     enabled = !busy,
                     onClick = {
-                        val ids = selectedMessageIds
+                        val ids = deleteTargetIds
                         photoBitmaps.evict(
                             messages.filter { it.id in ids }.mapNotNull { it.mediaId },
                         )
-                        confirmDeleteSelection = false
-                        selectedMessageIds = emptySet()
+                        deleteTargetIds = emptySet()
+                        selectedMessageIds = selectedMessageIds - ids
                         onDeleteMessages(ids)
                     },
                 )
                 LoveSecondaryButton(
                     label = "Abbrechen",
-                    onClick = { confirmDeleteSelection = false },
+                    onClick = { deleteTargetIds = emptySet() },
                 )
             }
         }
@@ -790,6 +880,7 @@ internal fun ConversationScreen(
 internal fun MessageComposer(
     text: TextFieldValue,
     busy: Boolean,
+    attachmentEnabled: Boolean = true,
     emojiPickerVisible: Boolean,
     captureType: ComposerCaptureType,
     voiceMode: VoiceRecordingMode,
@@ -887,7 +978,7 @@ internal fun MessageComposer(
                         )
                         IconButton(
                             onClick = onAttachment,
-                            enabled = !busy && !recording,
+                            enabled = attachmentEnabled && !busy && !recording,
                             modifier = Modifier.size(44.dp),
                         ) {
                             PaperclipIcon("Medien anhängen", modifier = Modifier.size(26.dp))
@@ -1223,6 +1314,7 @@ private const val EMOJI_EXIT_MILLIS = 100
 private const val VOICE_TIMER_INTERVAL_MILLIS = 100L
 private const val CAPTURE_TAP_THRESHOLD_MILLIS = 500L
 private const val CAPTURE_HINT_DURATION_MILLIS = 2_800L
+private const val MESSAGE_PREVIEW_LENGTH = 120
 private const val VOICE_CANCEL_WIDTH_FRACTION = 0.3f
 private val VOICE_LOCK_GESTURE_THRESHOLD = 78.dp
 private val VOICE_LOCK_OVERLAY_OFFSET = 50.dp
@@ -1241,36 +1333,205 @@ internal fun shouldPinNewestMessage(
     firstVisibleItemIndex: Int,
 ): Boolean = newestOutgoing || firstVisibleItemIndex <= 1
 
+internal fun messagePreview(message: ConversationEventEntity): String = when (message.kind) {
+    LoveDovesRepository.KIND_TEXT -> message.body.orEmpty()
+        .replace('\n', ' ')
+        .take(MESSAGE_PREVIEW_LENGTH)
+    LoveDovesRepository.KIND_PHOTO -> "Photo"
+    LoveDovesRepository.KIND_VIDEO -> "Video"
+    LoveDovesRepository.KIND_ROUND_VIDEO -> "Video message"
+    LoveDovesRepository.KIND_VOICE -> "Voice message"
+    else -> "Message"
+}
+
+@Composable
+internal fun MessageActionMenu(
+    expanded: Boolean,
+    outgoing: Boolean,
+    pinned: Boolean,
+    canEdit: Boolean,
+    onDismiss: () -> Unit,
+    onReply: () -> Unit,
+    onPin: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        modifier = Modifier.width(196.dp),
+        offset = DpOffset(if (outgoing) 4.dp else (-4).dp, (-10).dp),
+        shape = RoundedCornerShape(18.dp),
+        containerColor = Color.White,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.1f)),
+    ) {
+        MessageActionItem("Reply", { ReplyIcon(modifier = Modifier.size(23.dp)) }, onReply)
+        MessageActionItem(
+            if (pinned) "Unpin" else "Pin",
+            { PinIcon(modifier = Modifier.size(23.dp)) },
+            onPin,
+        )
+        if (canEdit) {
+            MessageActionItem("Edit", { EditIcon(modifier = Modifier.size(23.dp)) }, onEdit)
+        }
+        MessageActionItem("Delete", { DeleteIcon(modifier = Modifier.size(23.dp)) }, onDelete)
+    }
+}
+
+@Composable
+private fun MessageActionItem(
+    label: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(label, style = MaterialTheme.typography.bodyLarge) },
+        onClick = onClick,
+        leadingIcon = icon,
+        modifier = Modifier.height(52.dp),
+    )
+}
+
+@Composable
+private fun ReplyReference(
+    message: ConversationEventEntity?,
+    outgoing: Boolean,
+) {
+    Surface(
+        modifier = Modifier.widthIn(max = 286.dp).padding(bottom = 3.dp),
+        color = if (outgoing) LoveBlush else LoveMist,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, LoveInk.copy(alpha = 0.12f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Box(Modifier.width(3.dp).height(30.dp).background(LoveInk, CircleShape))
+            Text(
+                message?.let(::messagePreview) ?: "Original message unavailable",
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = LoveInk.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PinnedMessageBanner(
+    message: ConversationEventEntity,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(Color.White)
+            .padding(horizontal = 20.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        PinIcon(modifier = Modifier.size(22.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Pinned message", style = MaterialTheme.typography.labelLarge)
+            Text(
+                messagePreview(message),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = LoveInk.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComposerContextBar(title: String, preview: String, onClose: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.width(3.dp).height(34.dp).background(LoveInk, CircleShape))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                preview,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = LoveInk.copy(alpha = 0.58f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        IconButton(onClick = onClose, modifier = Modifier.size(42.dp)) {
+            CloseIcon("Close $title", Modifier.size(20.dp))
+        }
+    }
+}
+
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun MessageBubble(
     message: ConversationEventEntity,
+    replyTarget: ConversationEventEntity?,
     photoBitmaps: PhotoBitmapLoader,
     voiceBytes: suspend (String) -> ByteArray,
     selected: Boolean,
     selectionMode: Boolean,
+    actionMenuVisible: Boolean,
+    onShowActions: () -> Unit,
+    onDismissActions: () -> Unit,
+    onReply: () -> Unit,
+    onPin: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
     onRetry: (String) -> Unit,
     onOpenMedia: () -> Unit,
     onToggleSelection: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val sideTapInteraction = remember { MutableInteractionSource() }
     Box(
         Modifier
             .fillMaxWidth()
             .background(if (selected) LoveInk.copy(alpha = 0.1f) else Color.Transparent)
-            .combinedClickable(
-                onClick = {
-                    when {
-                        selectionMode -> onToggleSelection()
-                        message.kind == LoveDovesRepository.KIND_PHOTO ||
-                            message.kind == LoveDovesRepository.KIND_VIDEO ||
-                            message.kind == LoveDovesRepository.KIND_ROUND_VIDEO -> onOpenMedia()
-                    }
-                },
-                onLongClick = onLongPress,
-            )
             .padding(vertical = 2.dp),
     ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .clickable(
+                    interactionSource = sideTapInteraction,
+                    indication = null,
+                    onClickLabel = "Message actions",
+                    onClick = {
+                        if (selectionMode) onToggleSelection() else onShowActions()
+                    },
+                ),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth(0.18f)
+                .fillMaxHeight()
+                .align(if (message.outgoing) Alignment.CenterStart else Alignment.CenterEnd),
+        ) {
+            MessageActionMenu(
+                expanded = actionMenuVisible,
+                outgoing = message.outgoing,
+                pinned = message.pinned,
+                canEdit = message.outgoing && message.kind == LoveDovesRepository.KIND_TEXT,
+                onDismiss = onDismissActions,
+                onReply = onReply,
+                onPin = onPin,
+                onEdit = onEdit,
+                onDelete = onDelete,
+            )
+        }
         Column(
             Modifier.fillMaxWidth(),
             horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
@@ -1279,87 +1540,30 @@ private fun MessageBubble(
                 modifier = Modifier.fillMaxWidth(0.82f),
                 contentAlignment = if (message.outgoing) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
-                    RoundVideoMessageBubble(
-                        message = message,
-                        photoBitmaps = photoBitmaps,
-                    )
-                } else {
-                    Surface(
-                        color = if (message.outgoing) LoveBlush else LoveMist,
-                        shape = RoundedCornerShape(
-                            topStart = 22.dp,
-                            topEnd = 22.dp,
-                            bottomStart = if (message.outgoing) 22.dp else 6.dp,
-                            bottomEnd = if (message.outgoing) 6.dp else 22.dp,
-                        ),
-                    ) {
-                    when (message.kind) {
-                    LoveDovesRepository.KIND_PHOTO -> {
-                        val mediaId = requireNotNull(message.mediaId)
-                        Box {
-                            EncryptedPhotoImage(
-                                mediaId = mediaId,
-                                photoBitmaps = photoBitmaps,
-                                contentDescription = if (message.outgoing) {
-                                    "Gesendetes Foto"
-                                } else {
-                                    "Empfangenes Foto"
-                                },
-                                modifier = Modifier.fillMaxWidth().height(260.dp),
-                                contentScale = ContentScale.Crop,
-                            )
-                            MessageMediaMetadata(
-                                message,
-                                Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                            )
-                        }
-                    }
-                    LoveDovesRepository.KIND_VIDEO -> {
-                        val mediaId = requireNotNull(message.mediaId)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(260.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            EncryptedPhotoImage(
-                                mediaId = mediaId,
-                                photoBitmaps = photoBitmaps,
-                                contentDescription = if (message.outgoing) {
-                                    "Gesendetes Video"
-                                } else {
-                                    "Empfangenes Video"
-                                },
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.Black.copy(alpha = 0.52f),
-                                contentColor = Color.White,
-                                modifier = Modifier.size(58.dp),
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
-                                }
+                Column(
+                    horizontalAlignment = if (message.outgoing) Alignment.End else Alignment.Start,
+                    modifier = Modifier.combinedClickable(
+                        onClick = {
+                            when {
+                                selectionMode -> onToggleSelection()
+                                message.kind == LoveDovesRepository.KIND_PHOTO ||
+                                    message.kind == LoveDovesRepository.KIND_VIDEO ||
+                                    message.kind == LoveDovesRepository.KIND_ROUND_VIDEO -> onOpenMedia()
                             }
-                            MessageMediaMetadata(
-                                message,
-                                Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                            )
-                        }
-                    }
-                    LoveDovesRepository.KIND_VOICE -> {
-                        VoiceMessageContent(
-                            mediaId = requireNotNull(message.mediaId),
-                            declaredDurationMillis = 0L,
-                            mediaBytes = voiceBytes,
-                            footer = { CompactMessageMetadata(message) },
+                        },
+                        onLongClick = onLongPress,
+                    ),
+                ) {
+                    if (message.replyToId != null) {
+                        ReplyReference(
+                            message = replyTarget,
+                            outgoing = message.outgoing,
                         )
                     }
-                    else -> MessageText(message)
-                    }
+                    if (message.kind == LoveDovesRepository.KIND_ROUND_VIDEO) {
+                        RoundVideoMessageBubble(message, photoBitmaps)
+                    } else {
+                        MessageSurface(message, photoBitmaps, voiceBytes)
                     }
                 }
             }
@@ -1391,6 +1595,76 @@ private fun MessageBubble(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MessageSurface(
+    message: ConversationEventEntity,
+    photoBitmaps: PhotoBitmapLoader,
+    voiceBytes: suspend (String) -> ByteArray,
+) {
+    Surface(
+        color = if (message.outgoing) LoveBlush else LoveMist,
+        shape = RoundedCornerShape(
+            topStart = 22.dp,
+            topEnd = 22.dp,
+            bottomStart = if (message.outgoing) 22.dp else 6.dp,
+            bottomEnd = if (message.outgoing) 6.dp else 22.dp,
+        ),
+    ) {
+        when (message.kind) {
+            LoveDovesRepository.KIND_PHOTO -> MessagePhoto(message, photoBitmaps)
+            LoveDovesRepository.KIND_VIDEO -> MessageVideo(message, photoBitmaps)
+            LoveDovesRepository.KIND_VOICE -> VoiceMessageContent(
+                mediaId = requireNotNull(message.mediaId),
+                declaredDurationMillis = 0L,
+                mediaBytes = voiceBytes,
+                footer = { CompactMessageMetadata(message) },
+            )
+            else -> MessageText(message)
+        }
+    }
+}
+
+@Composable
+private fun MessagePhoto(message: ConversationEventEntity, photoBitmaps: PhotoBitmapLoader) {
+    Box {
+        EncryptedPhotoImage(
+            mediaId = requireNotNull(message.mediaId),
+            photoBitmaps = photoBitmaps,
+            contentDescription = if (message.outgoing) "Gesendetes Foto" else "Empfangenes Foto",
+            modifier = Modifier.fillMaxWidth().height(260.dp),
+            contentScale = ContentScale.Crop,
+        )
+        MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd).padding(8.dp))
+    }
+}
+
+@Composable
+private fun MessageVideo(message: ConversationEventEntity, photoBitmaps: PhotoBitmapLoader) {
+    Box(
+        modifier = Modifier.fillMaxWidth().height(260.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        EncryptedPhotoImage(
+            mediaId = requireNotNull(message.mediaId),
+            photoBitmaps = photoBitmaps,
+            contentDescription = if (message.outgoing) "Gesendetes Video" else "Empfangenes Video",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        Surface(
+            shape = CircleShape,
+            color = Color.Black.copy(alpha = 0.52f),
+            contentColor = Color.White,
+            modifier = Modifier.size(58.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                PlayIcon(modifier = Modifier.size(26.dp), color = Color.White)
+            }
+        }
+        MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd).padding(8.dp))
     }
 }
 
@@ -1438,6 +1712,9 @@ private fun RoundVideoMessageBubble(
 private fun MessageText(message: ConversationEventEntity) {
     val metadata = messageMetadata(message)
     val inlineId = "message-metadata"
+    val metadataWidthSp = (if (metadata.visual == null) 38 else 58) +
+        (if (message.editedAtEpochMillis > 0L) 38 else 0) +
+        (if (message.pinned) 16 else 0)
     Text(
         text = buildAnnotatedString {
             append(message.body.orEmpty())
@@ -1446,6 +1723,8 @@ private fun MessageText(message: ConversationEventEntity) {
                 id = inlineId,
                 alternateText = listOf(
                     formatTime(message.createdAtEpochMillis),
+                    "edited".takeIf { message.editedAtEpochMillis > 0L }.orEmpty(),
+                    "pinned".takeIf { message.pinned }.orEmpty(),
                     metadata.description,
                 ).filter(String::isNotEmpty).joinToString(" "),
             )
@@ -1453,7 +1732,7 @@ private fun MessageText(message: ConversationEventEntity) {
         inlineContent = mapOf(
             inlineId to InlineTextContent(
                 Placeholder(
-                    width = if (metadata.visual == null) 38.sp else 58.sp,
+                    width = metadataWidthSp.sp,
                     height = 18.sp,
                     placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
                 ),
@@ -1522,6 +1801,17 @@ private fun MessageMetadataRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        if (message.pinned) {
+            PinIcon(modifier = Modifier.size(12.dp), color = color)
+        }
+        if (message.editedAtEpochMillis > 0L) {
+            Text(
+                "edited",
+                color = color,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+            )
+        }
         Text(
             formatTime(message.createdAtEpochMillis),
             color = color,

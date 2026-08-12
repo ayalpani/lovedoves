@@ -90,36 +90,44 @@ internal class LoveDovesController(
         refreshNow(sync = false)
     }
 
-    fun sendText(text: String) = action {
-        repository.sendText(text)
+    fun sendText(text: String, replyToId: String? = null) = action {
+        repository.sendText(text, replyToId)
     }
 
-    fun sendPhoto(photo: PreparedPhoto) = action {
-        repository.sendPhoto(photo)
+    fun sendPhoto(photo: PreparedPhoto, replyToId: String? = null) = action {
+        repository.sendPhoto(photo, replyToId)
     }
 
-    fun sendVideo(video: PreparedVideo) {
+    fun sendVideo(video: PreparedVideo, replyToId: String? = null) {
         if (mutableBusy.value) {
             video.clear()
             return
         }
-        action { repository.sendVideo(video) }
+        action { repository.sendVideo(video, replyToId = replyToId) }
     }
 
-    fun sendRoundVideo(video: PreparedVideo) {
+    fun sendRoundVideo(video: PreparedVideo, replyToId: String? = null) {
         if (mutableBusy.value) {
             video.clear()
             return
         }
-        action { repository.sendVideo(video, round = true) }
+        action { repository.sendVideo(video, round = true, replyToId = replyToId) }
     }
 
-    fun sendVoice(voice: PreparedVoice) {
+    fun sendVoice(voice: PreparedVoice, replyToId: String? = null) {
         if (mutableBusy.value) {
             voice.clear()
             return
         }
-        action { repository.sendVoice(voice) }
+        action { repository.sendVoice(voice, replyToId) }
+    }
+
+    fun editTextMessage(id: String, text: String) = action {
+        repository.editTextMessage(id, text)
+    }
+
+    fun setMessagePinned(id: String, pinned: Boolean) = action {
+        repository.setMessagePinned(id, pinned)
     }
 
     fun retryMessage(id: String) = action {

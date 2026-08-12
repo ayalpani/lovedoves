@@ -117,6 +117,19 @@ message VoiceMessageV1 {
   uint64 duration_ms = 2;
 }
 
+message MessageMutationV1 {
+  enum Action {
+    ACTION_UNSPECIFIED = 0;
+    EDIT = 1;
+    PIN = 2;
+    UNPIN = 3;
+  }
+
+  string target_event_id = 1;
+  Action action = 2;
+  string text = 3;
+}
+
 message DeliveryReceiptV1 {
   string message_id = 1;
   int64 stored_at_epoch_ms = 2;
@@ -135,6 +148,10 @@ message ConversationEventV1 {
   uint32 version = 1;
   string event_id = 2;
   int64 created_at_epoch_ms = 3;
+  string reply_to_event_id = 4;
+  bool pinned = 5;
+  int64 edited_at_epoch_ms = 6;
+  int64 pin_updated_at_epoch_ms = 7;
   oneof payload {
     TextMessageV1 text = 10;
     PhotoMessageV1 photo = 11;
@@ -146,6 +163,7 @@ message ConversationEventV1 {
     VideoMessageV1 video = 17;
     ReadReceiptV1 read_receipt = 18 [deprecated = true];
     VoiceMessageV1 voice = 19;
+    MessageMutationV1 message_mutation = 20;
   }
 }
 

@@ -520,6 +520,46 @@ internal fun CopyIcon(
 )
 
 @Composable
+internal fun ReplyIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf("m9 17-5-5 5-5", "M4 12h11a5 5 0 0 1 5 5v2"),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun PinIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+) = LoveIcon(
+    listOf(
+        "M12 17v5",
+        "M5 17h14",
+        "M15 4.5V2H9v2.5a2 2 0 0 1-1 1.732V9l-3 3v2h14v-2l-3-3V6.232A2 2 0 0 1 15 4.5",
+    ),
+    description,
+    modifier,
+    color,
+)
+
+@Composable
+internal fun EditIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M12 20h9",
+        "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z",
+        "m15 5 3 3",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
 internal fun SelectionCheckIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),

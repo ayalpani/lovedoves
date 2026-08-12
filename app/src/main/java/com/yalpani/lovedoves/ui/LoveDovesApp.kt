@@ -87,6 +87,7 @@ internal fun LoveDovesApp(
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var mediaBusy by remember { mutableStateOf(false) }
     var localError by remember { mutableStateOf<String?>(null) }
+    var replyToMessageId by remember { mutableStateOf<String?>(null) }
     var chatBackground by remember(context) {
         mutableStateOf(ChatBackgroundOption.load(context))
     }
@@ -98,11 +99,17 @@ internal fun LoveDovesApp(
             val mimeType = context.contentResolver.getType(pickedMedia).orEmpty()
             if (mimeType.startsWith("video/")) {
                 runCatching { VideoProcessor.fromPicker(context, pickedMedia) }
-                    .onSuccess(controller::sendVideo)
+                    .onSuccess {
+                        controller.sendVideo(it, replyToMessageId)
+                        replyToMessageId = null
+                    }
                     .onFailure { localError = it.message ?: "Das Video konnte nicht gelesen werden." }
             } else {
                 runCatching { PhotoProcessor.fromPicker(context.contentResolver, pickedMedia) }
-                    .onSuccess(controller::sendPhoto)
+                    .onSuccess {
+                        controller.sendPhoto(it, replyToMessageId)
+                        replyToMessageId = null
+                    }
                     .onFailure { localError = it.message ?: "Das Foto konnte nicht gelesen werden." }
             }
             mediaBusy = false
@@ -132,6 +139,15 @@ internal fun LoveDovesApp(
         ) {
             onSystemPermissionPrompt(true)
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    LaunchedEffect(content, replyToMessageId) {
+        val conversation = content as? AppContentState.Conversation
+        if (
+            replyToMessageId != null &&
+            conversation?.messages?.none { it.id == replyToMessageId } != false
+        ) {
+            replyToMessageId = null
         }
     }
 
@@ -191,9 +207,23 @@ internal fun LoveDovesApp(
                         voiceBytes = controller::mediaBytes,
                         chatBackground = chatBackground.color,
                         busy = busy,
-                        onSend = controller::sendText,
-                        onSendVoice = controller::sendVoice,
-                        onSendRoundVideo = controller::sendRoundVideo,
+                        replyToMessageId = replyToMessageId,
+                        onReplyToMessage = { replyToMessageId = it },
+                        onCancelReply = { replyToMessageId = null },
+                        onSend = {
+                            controller.sendText(it, replyToMessageId)
+                            replyToMessageId = null
+                        },
+                        onSendVoice = {
+                            controller.sendVoice(it, replyToMessageId)
+                            replyToMessageId = null
+                        },
+                        onSendRoundVideo = {
+                            controller.sendRoundVideo(it, replyToMessageId)
+                            replyToMessageId = null
+                        },
+                        onEditMessage = controller::editTextMessage,
+                        onSetPinned = controller::setMessagePinned,
                         onAttachment = { overlay = Overlay.MediaCapture },
                         onSettings = { overlay = Overlay.Settings(state.pair) },
                         onRetry = controller::retryMessage,
@@ -258,7 +288,10 @@ internal fun LoveDovesApp(
                                         runCatching {
                                             PhotoProcessor.fromCamera(jpeg, leftQuarterTurns)
                                         }
-                                            .onSuccess(controller::sendPhoto)
+                                            .onSuccess {
+                                                controller.sendPhoto(it, replyToMessageId)
+                                                replyToMessageId = null
+                                            }
                                             .onFailure {
                                                 localError = it.message ?:
                                                     "Das Foto konnte nicht verarbeitet werden."
@@ -268,7 +301,8 @@ internal fun LoveDovesApp(
                                 },
                                 onUseVideo = { video ->
                                     overlay = null
-                                    controller.sendVideo(video)
+                                    controller.sendVideo(video, replyToMessageId)
+                                    replyToMessageId = null
                                 },
                             )
                         }

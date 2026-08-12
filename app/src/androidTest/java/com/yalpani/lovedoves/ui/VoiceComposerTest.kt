@@ -45,6 +45,34 @@ class VoiceComposerTest {
     }
 
     @Test
+    fun outgoingMessageMenuShowsRequestedActions() {
+        val replied = AtomicBoolean(false)
+        composeRule.setContent {
+            LoveDovesTheme {
+                Box {
+                    MessageActionMenu(
+                        expanded = true,
+                        outgoing = true,
+                        pinned = false,
+                        canEdit = true,
+                        onDismiss = {},
+                        onReply = { replied.set(true) },
+                        onPin = {},
+                        onEdit = {},
+                        onDelete = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Reply").assertExists().performClick()
+        composeRule.onNodeWithText("Pin").assertExists()
+        composeRule.onNodeWithText("Edit").assertExists()
+        composeRule.onNodeWithText("Delete").assertExists()
+        assertTrue(replied.get())
+    }
+
+    @Test
     fun quickTapSwitchesFromVoiceToRoundVideo() {
         val started = AtomicBoolean(false)
         val cancelled = AtomicBoolean(false)

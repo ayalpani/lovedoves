@@ -23,6 +23,7 @@ import com.yalpani.lovedoves.protocol.v1.EnvelopeV1
 import com.yalpani.lovedoves.protocol.v1.EncryptedMediaV1
 import com.yalpani.lovedoves.protocol.v1.InviteV1
 import com.yalpani.lovedoves.protocol.v1.MailboxWriteV1
+import com.yalpani.lovedoves.protocol.v1.MessageMutationV1
 import com.yalpani.lovedoves.protocol.v1.PairConfirmationV1
 import com.yalpani.lovedoves.protocol.v1.PairResponseV1
 import com.yalpani.lovedoves.protocol.v1.PhotoMessageV1
@@ -432,25 +433,33 @@ internal class LoveDovesRepository(
 
     fun messages(): Flow<List<ConversationEventEntity>> = database.conversationDao().observeAll()
 
-    suspend fun sendText(text: String) = io {
+    suspend fun sendText(text: String, replyToId: String? = null) = io {
         val normalized = text.trim()
         require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT_LENGTH)
+        val replyTarget = validatedReplyTarget(replyToId)
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         database.conversationDao().insert(
-            ConversationEventEntity(id, true, KIND_TEXT, normalized, null, now, DELIVERY_SENDING),
+            ConversationEventEntity(
+                id,
+                true,
+                KIND_TEXT,
+                normalized,
+                null,
+                now,
+                DELIVERY_SENDING,
+                replyToId = replyTarget,
+            ),
         )
-        val event = ConversationEventV1.newBuilder()
-            .setVersion(1)
-            .setEventId(id)
-            .setCreatedAtEpochMs(now)
+        val event = messageEventBuilder(id, now, replyTarget)
             .setText(TextMessageV1.newBuilder().setText(normalized))
             .build()
         enqueueAndUpload(id, id, event)
     }
 
-    suspend fun sendPhoto(photo: PreparedPhoto) = io {
+    suspend fun sendPhoto(photo: PreparedPhoto, replyToId: String? = null) = io {
         require(photo.jpeg.size <= MAX_PHOTO_BYTES)
+        val replyTarget = validatedReplyTarget(replyToId)
         val encrypted = try {
             session.media.encrypt(photo.jpeg)
         } finally {
@@ -460,12 +469,18 @@ internal class LoveDovesRepository(
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         database.conversationDao().insert(
-            ConversationEventEntity(id, true, KIND_PHOTO, null, encrypted.id, now, DELIVERY_SENDING),
+            ConversationEventEntity(
+                id,
+                true,
+                KIND_PHOTO,
+                null,
+                encrypted.id,
+                now,
+                DELIVERY_SENDING,
+                replyToId = replyTarget,
+            ),
         )
-        val event = ConversationEventV1.newBuilder()
-            .setVersion(1)
-            .setEventId(id)
-            .setCreatedAtEpochMs(now)
+        val event = messageEventBuilder(id, now, replyTarget)
             .setPhoto(
                 PhotoMessageV1.newBuilder()
                     .setMediaId(encrypted.id)
@@ -482,9 +497,14 @@ internal class LoveDovesRepository(
         encrypted.key.fill(0)
     }
 
-    suspend fun sendVideo(video: PreparedVideo, round: Boolean = false) = io {
+    suspend fun sendVideo(
+        video: PreparedVideo,
+        round: Boolean = false,
+        replyToId: String? = null,
+    ) = io {
         require(video.mp4.size <= MAX_VIDEO_BYTES)
         require(video.thumbnailJpeg.size <= MAX_PHOTO_BYTES)
+        val replyTarget = validatedReplyTarget(replyToId)
         var encryptedVideo: EncryptedMedia? = null
         var encryptedThumbnail: EncryptedMedia? = null
         val id = UUID.randomUUID().toString()
@@ -519,14 +539,12 @@ internal class LoveDovesRepository(
                         encryptedVideo.id,
                         now,
                         DELIVERY_SENDING,
+                        replyToId = replyTarget,
                     ),
                 )
             }
             stored = true
-            val event = ConversationEventV1.newBuilder()
-                .setVersion(1)
-                .setEventId(id)
-                .setCreatedAtEpochMs(now)
+            val event = messageEventBuilder(id, now, replyTarget)
                 .setVideo(
                     VideoMessageV1.newBuilder()
                         .setVideo(encryptedVideo.toProtocolMedia("video/mp4"))
@@ -555,9 +573,10 @@ internal class LoveDovesRepository(
         }
     }
 
-    suspend fun sendVoice(voice: PreparedVoice) = io {
+    suspend fun sendVoice(voice: PreparedVoice, replyToId: String? = null) = io {
         require(voice.m4a.size <= MAX_VOICE_BYTES)
         require(voice.durationMillis in 1..MAX_VOICE_DURATION_MILLIS)
+        val replyTarget = validatedReplyTarget(replyToId)
         var encryptedVoice: EncryptedMedia? = null
         val id = UUID.randomUUID().toString()
         var stored = false
@@ -582,14 +601,12 @@ internal class LoveDovesRepository(
                         encryptedVoice.id,
                         now,
                         DELIVERY_SENDING,
+                        replyToId = replyTarget,
                     ),
                 )
             }
             stored = true
-            val event = ConversationEventV1.newBuilder()
-                .setVersion(1)
-                .setEventId(id)
-                .setCreatedAtEpochMs(now)
+            val event = messageEventBuilder(id, now, replyTarget)
                 .setVoice(
                     VoiceMessageV1.newBuilder()
                         .setAudio(encryptedVoice.toProtocolMedia(VOICE_MIME_TYPE))
@@ -608,6 +625,36 @@ internal class LoveDovesRepository(
             encryptedVoice?.key?.fill(0)
             voice.clear()
         }
+    }
+
+    suspend fun editTextMessage(messageId: String, text: String) = io {
+        val normalized = text.trim()
+        require(normalized.isNotEmpty() && normalized.length <= MAX_TEXT_LENGTH)
+        val message = requireNotNull(database.conversationDao().get(messageId))
+        require(message.outgoing && message.kind == KIND_TEXT)
+        flushOutbox()
+        val editedAt = maxOf(System.currentTimeMillis(), message.editedAtEpochMillis + 1L)
+        require(database.conversationDao().updateText(messageId, normalized, editedAt) == 1)
+        if (replacePendingMessageEnvelope(messageId)) return@io
+        enqueueMessageMutation(
+            targetEventId = messageId,
+            action = MessageMutationV1.Action.EDIT,
+            text = normalized,
+            createdAtEpochMillis = editedAt,
+        )
+    }
+
+    suspend fun setMessagePinned(messageId: String, pinned: Boolean) = io {
+        val message = requireNotNull(database.conversationDao().get(messageId))
+        flushOutbox()
+        val updatedAt = maxOf(System.currentTimeMillis(), message.pinUpdatedAtEpochMillis + 1L)
+        require(database.conversationDao().updatePinned(messageId, pinned, updatedAt) == 1)
+        if (replacePendingMessageEnvelope(messageId)) return@io
+        enqueueMessageMutation(
+            targetEventId = messageId,
+            action = if (pinned) MessageMutationV1.Action.PIN else MessageMutationV1.Action.UNPIN,
+            createdAtEpochMillis = updatedAt,
+        )
     }
 
     suspend fun retryMessage(messageId: String) = io {
@@ -717,6 +764,67 @@ internal class LoveDovesRepository(
         uploadEvent(event, pending.partnerTarget())
     }
 
+    private fun validatedReplyTarget(replyToId: String?): String? {
+        val targetId = replyToId?.takeIf(String::isNotBlank) ?: return null
+        require(UUID_PATTERN.matches(targetId))
+        requireNotNull(database.conversationDao().get(targetId))
+        return targetId
+    }
+
+    private fun messageEventBuilder(
+        eventId: String,
+        createdAtEpochMillis: Long,
+        replyToId: String?,
+    ): ConversationEventV1.Builder = ConversationEventV1.newBuilder()
+        .setVersion(1)
+        .setEventId(eventId)
+        .setCreatedAtEpochMs(createdAtEpochMillis)
+        .apply { replyToId?.let(::setReplyToEventId) }
+
+    private suspend fun enqueueMessageMutation(
+        targetEventId: String,
+        action: MessageMutationV1.Action,
+        text: String = "",
+        createdAtEpochMillis: Long,
+    ) {
+        val pair = requireNotNull(database.pairStateDao().get())
+        val eventId = UUID.randomUUID().toString()
+        val event = ConversationEventV1.newBuilder()
+            .setVersion(1)
+            .setEventId(eventId)
+            .setCreatedAtEpochMs(createdAtEpochMillis)
+            .setMessageMutation(
+                MessageMutationV1.newBuilder()
+                    .setTargetEventId(targetEventId)
+                    .setAction(action)
+                    .setText(text),
+            )
+            .build()
+        val outbox = OutboxEntity(
+            eventId,
+            "",
+            encryptEvent(event, pair.partnerAddressName),
+            0,
+            System.currentTimeMillis(),
+        )
+        database.outboxDao().put(outbox)
+        runCatching { uploadOutbox(outbox) }
+    }
+
+    private suspend fun replacePendingMessageEnvelope(messageId: String): Boolean {
+        val pending = database.outboxDao().get(messageId) ?: return false
+        val pair = requireNotNull(database.pairStateDao().get())
+        val current = requireNotNull(database.conversationDao().get(messageId))
+        val replacement = pending.copy(
+            encryptedEnvelope = encryptEvent(current.toProtocolEvent(), pair.partnerAddressName),
+            attempts = 0,
+            nextAttemptAtEpochMillis = System.currentTimeMillis(),
+        )
+        database.outboxDao().put(replacement)
+        runCatching { uploadOutbox(replacement) }
+        return true
+    }
+
     private suspend fun enqueueAndUpload(objectId: String, eventId: String, event: ConversationEventV1) {
         val pair = requireNotNull(database.pairStateDao().get())
         val envelope = encryptEvent(event, pair.partnerAddressName)
@@ -819,6 +927,10 @@ internal class LoveDovesRepository(
                     .decrypt(remoteAddress, envelope.signalMessageType, envelope.signalMessage.toByteArray())
                 val event = ConversationEventV1.parseFrom(plaintext)
                 require(event.version == 1 && event.eventId == envelope.messageId)
+                val replyToId = event.replyToEventId.takeIf(String::isNotBlank)?.also {
+                    require(UUID_PATTERN.matches(it))
+                }
+                require(event.editedAtEpochMs >= 0L && event.pinUpdatedAtEpochMs >= 0L)
                 when (event.payloadCase) {
                     ConversationEventV1.PayloadCase.TEXT -> {
                         require(event.text.text.isNotBlank())
@@ -832,6 +944,10 @@ internal class LoveDovesRepository(
                                 null,
                                 event.createdAtEpochMs,
                                 DELIVERY_DELIVERED,
+                                replyToId = replyToId,
+                                editedAtEpochMillis = event.editedAtEpochMs,
+                                pinned = event.pinned,
+                                pinUpdatedAtEpochMillis = event.pinUpdatedAtEpochMs,
                             ),
                         )
                         receiptFor = event.eventId
@@ -868,6 +984,10 @@ internal class LoveDovesRepository(
                                 event.photo.mediaId,
                                 event.createdAtEpochMs,
                                 DELIVERY_DELIVERED,
+                                replyToId = replyToId,
+                                editedAtEpochMillis = event.editedAtEpochMs,
+                                pinned = event.pinned,
+                                pinUpdatedAtEpochMillis = event.pinUpdatedAtEpochMs,
                             ),
                         )
                         database.processedObjectDao().insert(
@@ -903,6 +1023,10 @@ internal class LoveDovesRepository(
                                 video.id,
                                 event.createdAtEpochMs,
                                 DELIVERY_DELIVERED,
+                                replyToId = replyToId,
+                                editedAtEpochMillis = event.editedAtEpochMs,
+                                pinned = event.pinned,
+                                pinUpdatedAtEpochMillis = event.pinUpdatedAtEpochMs,
                             ),
                         )
                         listOf(thumbnail.id, video.id).forEach { mediaId ->
@@ -932,6 +1056,10 @@ internal class LoveDovesRepository(
                                 voice.id,
                                 event.createdAtEpochMs,
                                 DELIVERY_DELIVERED,
+                                replyToId = replyToId,
+                                editedAtEpochMillis = event.editedAtEpochMs,
+                                pinned = event.pinned,
+                                pinUpdatedAtEpochMillis = event.pinUpdatedAtEpochMs,
                             ),
                         )
                         database.processedObjectDao().insert(
@@ -939,6 +1067,35 @@ internal class LoveDovesRepository(
                         )
                         mediaToDelete += voice.id
                         receiptFor = event.eventId
+                    }
+                    ConversationEventV1.PayloadCase.MESSAGE_MUTATION -> {
+                        val mutation = event.messageMutation
+                        require(UUID_PATTERN.matches(mutation.targetEventId))
+                        require(event.createdAtEpochMs > 0L)
+                        val target = database.conversationDao().get(mutation.targetEventId)
+                        if (target != null) {
+                            when (mutation.action) {
+                                MessageMutationV1.Action.EDIT -> {
+                                    require(!target.outgoing && target.kind == KIND_TEXT)
+                                    require(
+                                        mutation.text.isNotBlank() &&
+                                            mutation.text.length <= MAX_TEXT_LENGTH,
+                                    )
+                                    database.conversationDao().updateText(
+                                        target.id,
+                                        mutation.text.trim(),
+                                        event.createdAtEpochMs,
+                                    )
+                                }
+                                MessageMutationV1.Action.PIN,
+                                MessageMutationV1.Action.UNPIN -> database.conversationDao().updatePinned(
+                                    target.id,
+                                    mutation.action == MessageMutationV1.Action.PIN,
+                                    event.createdAtEpochMs,
+                                )
+                                else -> error("Unsupported message mutation")
+                            }
+                        }
                     }
                     ConversationEventV1.PayloadCase.DELIVERY_RECEIPT -> {
                         val receipt = event.deliveryReceipt
@@ -1002,6 +1159,13 @@ internal class LoveDovesRepository(
                         event.recoveryBatch.recordsList.forEach { record ->
                             val archived = record.event
                             require(archived.version == 1 && archived.eventId.isNotBlank())
+                            val archivedReplyToId = archived.replyToEventId
+                                .takeIf(String::isNotBlank)
+                                ?.also { require(UUID_PATTERN.matches(it)) }
+                            require(
+                                archived.editedAtEpochMs >= 0L &&
+                                    archived.pinUpdatedAtEpochMs >= 0L,
+                            )
                             if (database.conversationDao().get(archived.eventId) != null) {
                                 return@forEach
                             }
@@ -1018,6 +1182,10 @@ internal class LoveDovesRepository(
                                             null,
                                             archived.createdAtEpochMs,
                                             DELIVERY_DELIVERED,
+                                            replyToId = archivedReplyToId,
+                                            editedAtEpochMillis = archived.editedAtEpochMs,
+                                            pinned = archived.pinned,
+                                            pinUpdatedAtEpochMillis = archived.pinUpdatedAtEpochMs,
                                         ),
                                     )
                                 }
@@ -1058,6 +1226,10 @@ internal class LoveDovesRepository(
                                             archivedMedia.mediaId,
                                             archived.createdAtEpochMs,
                                             DELIVERY_DELIVERED,
+                                            replyToId = archivedReplyToId,
+                                            editedAtEpochMillis = archived.editedAtEpochMs,
+                                            pinned = archived.pinned,
+                                            pinUpdatedAtEpochMillis = archived.pinUpdatedAtEpochMs,
                                         ),
                                     )
                                     database.processedObjectDao().insert(
@@ -1099,6 +1271,10 @@ internal class LoveDovesRepository(
                                             video.id,
                                             archived.createdAtEpochMs,
                                             DELIVERY_DELIVERED,
+                                            replyToId = archivedReplyToId,
+                                            editedAtEpochMillis = archived.editedAtEpochMs,
+                                            pinned = archived.pinned,
+                                            pinUpdatedAtEpochMillis = archived.pinUpdatedAtEpochMs,
                                         ),
                                     )
                                     listOf(thumbnail.id, video.id).forEach { mediaId ->
@@ -1132,6 +1308,10 @@ internal class LoveDovesRepository(
                                             voice.id,
                                             archived.createdAtEpochMs,
                                             DELIVERY_DELIVERED,
+                                            replyToId = archivedReplyToId,
+                                            editedAtEpochMillis = archived.editedAtEpochMs,
+                                            pinned = archived.pinned,
+                                            pinUpdatedAtEpochMillis = archived.pinUpdatedAtEpochMs,
                                         ),
                                     )
                                     database.processedObjectDao().insert(
@@ -1251,6 +1431,10 @@ internal class LoveDovesRepository(
                 update(if (item.outgoing) 1 else 0)
                 update(item.createdAtEpochMillis.toString().encodeToByteArray())
                 item.body?.let { update(it.encodeToByteArray()) }
+                item.replyToId?.let { update(it.encodeToByteArray()) }
+                update(item.editedAtEpochMillis.toString().encodeToByteArray())
+                update(if (item.pinned) 1 else 0)
+                update(item.pinUpdatedAtEpochMillis.toString().encodeToByteArray())
                 item.mediaId?.let { mediaId ->
                     update(mediaId.encodeToByteArray())
                     val media = requireNotNull(database.mediaDao().get(mediaId))
@@ -1333,6 +1517,10 @@ internal class LoveDovesRepository(
             .setVersion(1)
             .setEventId(id)
             .setCreatedAtEpochMs(createdAtEpochMillis)
+            .setPinned(pinned)
+            .setEditedAtEpochMs(editedAtEpochMillis)
+            .setPinUpdatedAtEpochMs(pinUpdatedAtEpochMillis)
+            .apply { replyToId?.let { setReplyToEventId(it) } }
         return when (kind) {
             KIND_TEXT -> builder.setText(TextMessageV1.newBuilder().setText(body.orEmpty())).build()
             KIND_PHOTO -> {

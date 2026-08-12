@@ -63,6 +63,10 @@ internal data class ConversationEventEntity(
     val mediaId: String?,
     val createdAtEpochMillis: Long,
     val deliveryState: String,
+    val replyToId: String? = null,
+    val editedAtEpochMillis: Long = 0L,
+    val pinned: Boolean = false,
+    val pinUpdatedAtEpochMillis: Long = 0L,
 )
 
 @Entity(tableName = "media")
@@ -151,6 +155,19 @@ internal interface ConversationDao {
 
     @Query("UPDATE conversation_events SET deliveryState = :state WHERE id = :id")
     fun updateDelivery(id: String, state: String)
+
+    @Query(
+        "UPDATE conversation_events SET body = :body, editedAtEpochMillis = :editedAt " +
+            "WHERE id = :id AND editedAtEpochMillis < :editedAt",
+    )
+    fun updateText(id: String, body: String, editedAt: Long): Int
+
+    @Query(
+        "UPDATE conversation_events SET pinned = :pinned, " +
+            "pinUpdatedAtEpochMillis = :updatedAt " +
+            "WHERE id = :id AND pinUpdatedAtEpochMillis < :updatedAt",
+    )
+    fun updatePinned(id: String, pinned: Boolean, updatedAt: Long): Int
 
     @Query("DELETE FROM conversation_events WHERE id IN (:ids)")
     fun delete(ids: List<String>)
@@ -242,7 +259,7 @@ internal interface ProcessedObjectDao {
         SignalRecordEntity::class,
         ProcessedObjectEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
@@ -265,7 +282,13 @@ internal abstract class VaultDatabase : RoomDatabase() {
                 "love-doves-vault.db",
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .build()
         }
 
@@ -324,6 +347,23 @@ internal abstract class VaultDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE media ADD COLUMN thumbnailMediaId TEXT")
                 db.execSQL(
                     "ALTER TABLE media ADD COLUMN durationMillis INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversation_events ADD COLUMN replyToId TEXT")
+                db.execSQL(
+                    "ALTER TABLE conversation_events ADD COLUMN " +
+                        "editedAtEpochMillis INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE conversation_events ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE conversation_events ADD COLUMN " +
+                        "pinUpdatedAtEpochMillis INTEGER NOT NULL DEFAULT 0",
                 )
             }
         }
