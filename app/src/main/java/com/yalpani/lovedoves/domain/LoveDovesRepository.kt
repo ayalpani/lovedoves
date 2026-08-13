@@ -370,7 +370,7 @@ internal class LoveDovesRepository(
 
     suspend fun fetchRemoteResponse(): PairingSnapshot = io {
         val pending = requireNotNull(database.pendingPairingDao().get())
-        require(pending.role == ROLE_INVITER && pending.mode == PairingMode.REMOTE.name)
+        require(pending.role == ROLE_INVITER) { "Dieses Gerät hat keine offene Einladung." }
         val invite = InviteV1.parseFrom(pending.invite)
         val encrypted = RelayClient(invite.mailbox.relayUrl).getRendezvous(
             invite.inviteId,

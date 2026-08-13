@@ -2,6 +2,7 @@ package com.yalpani.lovedoves.ui
 
 import android.content.Context
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -10,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -22,6 +24,8 @@ import androidx.compose.ui.test.up
 import androidx.compose.ui.platform.testTag
 import androidx.test.core.app.ApplicationProvider
 import com.yalpani.lovedoves.LoveDovesTheme
+import com.yalpani.lovedoves.data.ConversationEventEntity
+import com.yalpani.lovedoves.domain.LoveDovesRepository
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
@@ -47,19 +51,30 @@ class VoiceComposerTest {
     @Test
     fun outgoingMessageMenuShowsRequestedActions() {
         val replied = AtomicBoolean(false)
+        val copied = AtomicBoolean(false)
+        val selected = AtomicBoolean(false)
+        val message = ConversationEventEntity(
+            id = "text-message",
+            outgoing = true,
+            kind = LoveDovesRepository.KIND_TEXT,
+            body = "Hello",
+            mediaId = null,
+            createdAtEpochMillis = System.currentTimeMillis(),
+            deliveryState = LoveDovesRepository.DELIVERY_READ,
+        )
         composeRule.setContent {
             LoveDovesTheme {
                 Box {
                     MessageActionMenu(
                         expanded = true,
-                        outgoing = true,
-                        pinned = false,
-                        canEdit = true,
+                        message = message,
                         onDismiss = {},
                         onReply = { replied.set(true) },
                         onPin = {},
                         onEdit = {},
+                        onCopyText = { copied.set(true) },
                         onDelete = {},
+                        onSelect = { selected.set(true) },
                     )
                 }
             }
@@ -68,8 +83,56 @@ class VoiceComposerTest {
         composeRule.onNodeWithText("Reply").assertExists().performClick()
         composeRule.onNodeWithText("Pin").assertExists()
         composeRule.onNodeWithText("Edit").assertExists()
+        composeRule.onNodeWithText("Copy Text").assertExists().performClick()
         composeRule.onNodeWithText("Delete").assertExists()
+        composeRule.onNodeWithText("Select").assertExists().performClick()
+        composeRule.onNodeWithContentDescription("Gelesen", substring = true)
+            .assertExists()
         assertTrue(replied.get())
+        assertTrue(copied.get())
+        assertTrue(selected.get())
+    }
+
+    @Test
+    fun roundVideoLongPressSelectsTheMessage() {
+        val selected = AtomicBoolean(false)
+        composeRule.setContent {
+            LoveDovesTheme {
+                RoundVideoGestureLayer(
+                    onClick = {},
+                    onLongPress = { selected.set(true) },
+                    modifier = Modifier.size(240.dp).testTag("round video gesture"),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("round video gesture").performTouchInput {
+            down(center)
+            advanceEventTime(1_000L)
+            up()
+        }
+
+        composeRule.waitForIdle()
+        assertTrue(selected.get())
+    }
+
+    @Test
+    fun pinnedMediaHasAnExplicitBadge() {
+        val message = ConversationEventEntity(
+            id = "round-video",
+            outgoing = true,
+            kind = LoveDovesRepository.KIND_ROUND_VIDEO,
+            body = null,
+            mediaId = "thumbnail",
+            createdAtEpochMillis = 0L,
+            deliveryState = LoveDovesRepository.DELIVERY_SENT,
+            pinned = true,
+        )
+        composeRule.setContent {
+            LoveDovesTheme { PinnedMediaBadge(message) }
+        }
+
+        composeRule.onNodeWithContentDescription("Angepinnt").assertExists()
     }
 
     @Test
@@ -126,7 +189,7 @@ class VoiceComposerTest {
         composeRule.onNodeWithText(
             "Hold to record video. Tap to switch to audio.",
         ).assertExists()
-        assertTrue(started.get())
+        assertFalse(started.get())
         assertTrue(cancelled.get())
     }
 
@@ -216,6 +279,12 @@ class VoiceComposerTest {
         val idleActionBounds = composeRule
             .onNodeWithContentDescription("Sprachnachricht aufnehmen")
             .fetchSemanticsNode().boundsInRoot
+        val idleInputBounds = composeRule.onNodeWithTag(COMPOSER_INPUT_TAG)
+            .fetchSemanticsNode().boundsInRoot
+
+        val startPadding = idleInputBounds.left - idleHostBounds.left
+        assertEquals(startPadding, idleActionBounds.left - idleInputBounds.right, 1f)
+        assertEquals(startPadding, idleHostBounds.right - idleActionBounds.right, 1f)
 
         composeRule.onNodeWithContentDescription("Sprachnachricht aufnehmen")
             .performTouchInput {

@@ -9,6 +9,7 @@ services:
       - /opt/lovedoves/config/relay.env
     volumes:
       - /opt/lovedoves/data:/data
+      - /opt/lovedoves/config/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
     networks:
       - graphula
     read_only: true

@@ -31,6 +31,8 @@ type Server struct {
 	store          *Store
 	bootstrapToken string
 	adminEmail     string
+	adminHistoryMu sync.Mutex
+	adminHistory   []adminSnapshot
 	notifier       Notifier
 	logger         *slog.Logger
 	limiter        *fixedWindowLimiter
@@ -51,6 +53,9 @@ func NewServer(store *Store, bootstrapToken string, notifier Notifier, logger *s
 	if server.adminEmail != "" {
 		mux.HandleFunc("GET /admin/styles.css", server.adminStyles)
 		mux.HandleFunc("GET /admin/", server.admin)
+		if stats, err := store.AdminStats(context.Background()); err == nil {
+			server.recordAdminSnapshot(stats, store.now())
+		}
 	}
 	mux.HandleFunc("POST /v1/mailboxes", server.createMailbox)
 	mux.HandleFunc("POST /v1/mailboxes/{mailbox}/partner-replacement", server.preparePartnerReplacement)
@@ -342,6 +347,9 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			)
 		}()
 		next.ServeHTTP(recorder, request)
+		if s.adminEmail != "" && recorder.status < http.StatusBadRequest && request.Method != http.MethodGet {
+			s.captureAdminSnapshot(request.Context())
+		}
 	})
 }
 

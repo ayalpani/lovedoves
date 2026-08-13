@@ -82,7 +82,7 @@ internal class TransportSyncWorker(
         manager.createNotificationChannel(
             NotificationChannel(
                 NOTIFICATION_CHANNEL,
-                "Neue Aktivität",
+                "Nachrichten",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
                 description = "Inhaltslose Hinweise auf neue verschlüsselte Nachrichten"
@@ -92,7 +92,7 @@ internal class TransportSyncWorker(
         val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification_heart)
             .setContentTitle("Love Doves")
-            .setContentText("Neue Aktivität in Love Doves")
+            .setContentText("Neue Nachricht")
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(
                 PendingIntent.getActivity(

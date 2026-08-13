@@ -66,7 +66,7 @@ internal fun CameraPermissionGate(
         content()
     } else {
         Column(
-            Modifier.fillMaxSize().padding(32.dp),
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

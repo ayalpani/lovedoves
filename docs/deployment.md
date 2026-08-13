@@ -12,8 +12,8 @@ LOVE_DOVES_LISTEN_ADDR=:8787
 LOVE_DOVES_DATA_DIR=/data
 LOVE_DOVES_BOOTSTRAP_TOKEN=<nur für die erste Mailbox: 32 zufällige Bytes, base64url>
 LOVE_DOVES_ADMIN_EMAIL=<exakt freigeschaltete Betreiberadresse; leer deaktiviert /admin/>
-FCM_PROJECT_ID=<optional>
-GOOGLE_APPLICATION_CREDENTIALS=<optionaler externer Pfad>
+FCM_PROJECT_ID=<Firebase-Projekt-ID; leer deaktiviert FCM>
+GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-service-account.json
 ```
 
 Das Token entsteht mit `go run ./cmd/lovedoves-relay bootstrap-token` im
@@ -41,6 +41,14 @@ weil URL-Pfade sonst Mailbox- und Objekt-IDs verraten würden. Der enthaltene
 ausschließlich außerhalb des Repositorys liegt. Der VHost liefert außerdem
 `assetlinks.json`, damit Android HTTPS-
 Einladungen direkt Love Doves zuordnen kann.
+
+Das Firebase-Servicekonto liegt ausschließlich auf dem Host unter
+`/opt/lovedoves/config/firebase-service-account.json`, wird read-only nach
+`/run/secrets/firebase-service-account.json` gemountet und nie in Image,
+Repository oder Logs übernommen. Es benötigt nur die Rolle
+`roles/firebasecloudmessaging.admin`. FCM erhält ausschließlich ein
+inhaltsloses Datenfeld (`wake=1`); die lokale App lädt danach verschlüsselte
+Objekte und erzeugt bei Bedarf selbst den generischen Hinweis „Neue Nachricht“.
 
 Der Ablauf auf dem Host ist: Source nach `/opt/lovedoves/source` aktualisieren,
 Container neu bauen, lokalen Healthcheck durchführen und vor dem ersten

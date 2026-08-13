@@ -16,8 +16,27 @@ Run Go commands from `relay/`. Use a disposable Android emulator for
 instrumentation tests. Never run an uninstalling or app-data-clearing test task
 on Arash's personal Galaxy A54.
 
+Love Doves owns the `LoveDoves_API_36` AVD. Never select an emulator by a
+volatile serial such as `emulator-5554` alone: verify
+`ro.boot.qemu.avd_name=LoveDoves_API_36` before installing, clearing, wiping, or
+running instrumentation, and set `ANDROID_SERIAL` for Gradle device tests. Never
+touch a Spur or other product AVD.
+
 libsignal's JVM classes require Java 21. On Arash's Mac, use the JDK bundled
 with Android Studio as shown above. Android bytecode still targets Java 17.
+
+## Release signing and device updates
+
+- Before claiming that the Love Doves release key is missing, that an installed
+  app cannot be updated, or that a reinstall is required, check the existing
+  release keystore at `~/.config/lovedoves/release.p12` and the macOS Keychain
+  item `lovedoves-release-keystore`.
+- Compare the release certificate fingerprint with the certificate of the app
+  already installed on the target device. Build, align, and sign the release APK
+  with that existing identity before attempting an in-place update.
+- Never fall back to uninstalling Love Doves because a debug APK has a signature
+  mismatch. Uninstalling or clearing the Galaxy A54 requires explicit approval
+  after explaining that it deletes the local vault, pairing, and chat data.
 
 ## Security invariants
 
@@ -42,6 +61,10 @@ with Android Studio as shown above. Android bytecode still targets Java 17.
   then show only that role's next action. Never mix invite creation, QR scanning,
   link input, and the relay freischalt code on one screen.
 - Prefer Lucide icons and a small number of focused screens.
+- Treat every Relay Admin copy change as a responsive layout change: verify it on
+  desktop and at 390 px mobile, and adapt typography, width, line height, and
+  container sizing instead of preserving stale line-count assumptions. The main
+  status headline stays exactly two lines: `Alles läuft.` / `Nichts wird mitgelesen.`
 
 ## Spur reuse contract
 

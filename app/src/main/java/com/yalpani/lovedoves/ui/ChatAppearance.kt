@@ -2,18 +2,17 @@ package com.yalpani.lovedoves.ui
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
-import com.yalpani.lovedoves.LovePaper
 
 internal enum class ChatBackgroundOption(
     val label: String,
     val color: Color,
 ) {
-    PAPER("Papier", LovePaper),
-    BLUSH("Rosa", Color(0xFFFFE8EC)),
-    PEACH("Pfirsich", Color(0xFFFFEBDD)),
-    SAGE("Salbei", Color(0xFFE5F0E4)),
-    SKY("Himmel", Color(0xFFE5EFF8)),
-    LAVENDER("Lavendel", Color(0xFFEDE8F7));
+    PAPER("Papier", Color(0xFFD2CCC1)),
+    BLUSH("Rosa", Color(0xFFDCA8B4)),
+    PEACH("Pfirsich", Color(0xFFE2B895)),
+    SAGE("Salbei", Color(0xFFAFC8AB)),
+    SKY("Himmel", Color(0xFFACC8DD)),
+    LAVENDER("Lavendel", Color(0xFFC3B3DA));
 
     fun persist(context: Context) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

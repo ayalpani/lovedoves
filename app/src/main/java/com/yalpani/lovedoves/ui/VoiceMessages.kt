@@ -77,7 +77,7 @@ internal fun isQuickCapture(durationMillis: Long, thresholdMillis: Long): Boolea
 internal fun Modifier.voiceRecordGesture(
     enabled: Boolean,
     contentDescription: String,
-    tapThresholdMillis: Long,
+    holdDelayMillis: Long,
     cancelThresholdPx: Float,
     lockThresholdPx: Float,
     onTap: () -> Unit,
@@ -88,15 +88,38 @@ internal fun Modifier.voiceRecordGesture(
     onRelease: () -> Unit,
 ): Modifier = this
     .semantics { this.contentDescription = contentDescription }
-    .pointerInput(enabled, tapThresholdMillis, cancelThresholdPx, lockThresholdPx) {
+    .pointerInput(enabled, holdDelayMillis, cancelThresholdPx, lockThresholdPx) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            var change = down
+            var pointerLost = false
+            withTimeoutOrNull(holdDelayMillis) {
+                while (change.pressed && isQuickCapture(
+                        change.uptimeMillis - down.uptimeMillis,
+                        holdDelayMillis,
+                    )
+                ) {
+                    val event = awaitPointerEvent()
+                    change = event.changes.firstOrNull { it.id == down.id } ?: run {
+                        pointerLost = true
+                        return@withTimeoutOrNull
+                    }
+                    change.consume()
+                }
+            }
+            if (pointerLost) return@awaitEachGesture
+            if (!change.pressed && isQuickCapture(
+                    change.uptimeMillis - down.uptimeMillis,
+                    holdDelayMillis,
+                )
+            ) {
+                onTap()
+                return@awaitEachGesture
+            }
             onStart()
             var completed = false
             while (!completed) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 val deltaX = change.position.x - down.position.x
                 val deltaY = change.position.y - down.position.y
                 onCancelProgress(
@@ -123,15 +146,15 @@ internal fun Modifier.voiceRecordGesture(
                         completed = true
                     }
                     VoiceGestureDecision.NONE -> if (!change.pressed) {
-                        if (isQuickCapture(change.uptimeMillis - down.uptimeMillis, tapThresholdMillis)) {
-                            onTap()
-                        } else {
-                            onRelease()
-                        }
+                        onRelease()
                         completed = true
                     }
                 }
                 change.consume()
+                if (!completed) {
+                    val event = awaitPointerEvent()
+                    change = event.changes.firstOrNull { it.id == down.id } ?: break
+                }
             }
         }
     }
@@ -282,9 +305,12 @@ internal class MemoryVoiceRecorder(
 
 @Composable
 internal fun VoiceMessageContent(
+    messageId: String,
     mediaId: String,
     declaredDurationMillis: Long,
     mediaBytes: suspend (String) -> ByteArray,
+    playbackController: VoicePlaybackController,
+    onPlaybackCompleted: (String) -> Unit,
     footer: @Composable () -> Unit,
 ) {
     val bytes by produceState<ByteArray?>(null, mediaId, mediaBytes) {
@@ -299,56 +325,152 @@ internal fun VoiceMessageContent(
         return
     }
     MemoryVoicePlayer(
+        messageId = messageId,
         bytes = loadedBytes,
         declaredDurationMillis = declaredDurationMillis,
+        playbackController = playbackController,
+        onPlaybackCompleted = onPlaybackCompleted,
         footer = footer,
     )
 }
 
-@Composable
-private fun MemoryVoicePlayer(
-    bytes: ByteArray,
-    declaredDurationMillis: Long,
-    footer: @Composable () -> Unit,
-) {
-    var player by remember(bytes) { mutableStateOf<MediaPlayer?>(null) }
-    var prepared by remember(bytes) { mutableStateOf(false) }
-    var playing by remember(bytes) { mutableStateOf(false) }
-    var positionMillis by remember(bytes) { mutableFloatStateOf(0f) }
-    var durationMillis by remember(bytes) {
-        mutableFloatStateOf(declaredDurationMillis.coerceAtLeast(1L).toFloat())
+internal class VoicePlaybackController : Closeable {
+    var activeMessageId by mutableStateOf<String?>(null)
+        private set
+    var prepared by mutableStateOf(false)
+        private set
+    var playing by mutableStateOf(false)
+        private set
+    var positionMillis by mutableFloatStateOf(0f)
+        private set
+    var durationMillis by mutableFloatStateOf(1f)
+        private set
+
+    private var player: MediaPlayer? = null
+    private var memory: MemoryMediaFile? = null
+    private var descriptor: ParcelFileDescriptor? = null
+    private var onPlaybackCompleted: ((String) -> Unit)? = null
+
+    fun toggle(
+        messageId: String,
+        bytes: ByteArray,
+        declaredDurationMillis: Long,
+        onCompleted: (String) -> Unit,
+    ) {
+        val current = player
+        if (activeMessageId != messageId || current == null) {
+            play(messageId, bytes, declaredDurationMillis, onCompleted)
+            return
+        }
+        if (!prepared) return
+        if (current.isPlaying) {
+            current.pause()
+            playing = false
+        } else {
+            current.start()
+            playing = true
+        }
     }
 
-    DisposableEffect(bytes) {
-        val memory = MemoryMediaFile.fromBytes(bytes)
-        val descriptor = memory.duplicate()
-        val current = MediaPlayer().apply {
-            setDataSource(descriptor.fileDescriptor, 0L, bytes.size.toLong())
-            setOnPreparedListener {
-                durationMillis = it.duration.coerceAtLeast(1).toFloat()
-                prepared = true
-                player = it
-            }
-            setOnCompletionListener {
-                playing = false
-                positionMillis = 0f
-                it.seekTo(0)
-            }
-            prepareAsync()
+    fun play(
+        messageId: String,
+        bytes: ByteArray,
+        declaredDurationMillis: Long,
+        onCompleted: (String) -> Unit,
+    ) {
+        releaseCurrent()
+        val nextMemory = runCatching { MemoryMediaFile.fromBytes(bytes) }.getOrNull() ?: return
+        val nextDescriptor = runCatching { nextMemory.duplicate() }.getOrElse {
+            nextMemory.close()
+            return
         }
-        onDispose {
-            playing = false
-            player = null
-            runCatching { current.release() }
-            runCatching { descriptor.close() }
-            runCatching { memory.close() }
+        val nextPlayer = MediaPlayer()
+        activeMessageId = messageId
+        prepared = false
+        playing = false
+        positionMillis = 0f
+        durationMillis = declaredDurationMillis.coerceAtLeast(1L).toFloat()
+        memory = nextMemory
+        descriptor = nextDescriptor
+        player = nextPlayer
+        onPlaybackCompleted = onCompleted
+        runCatching {
+            nextPlayer.setDataSource(nextDescriptor.fileDescriptor, 0L, bytes.size.toLong())
+            nextPlayer.setOnPreparedListener { preparedPlayer ->
+                if (player === preparedPlayer) {
+                    durationMillis = preparedPlayer.duration.coerceAtLeast(1).toFloat()
+                    prepared = true
+                    preparedPlayer.start()
+                    playing = true
+                }
+            }
+            nextPlayer.setOnCompletionListener { completedPlayer ->
+                if (player === completedPlayer) {
+                    playing = false
+                    positionMillis = 0f
+                    completedPlayer.seekTo(0)
+                    onPlaybackCompleted?.invoke(messageId)
+                }
+            }
+            nextPlayer.setOnErrorListener { failedPlayer, _, _ ->
+                if (player === failedPlayer) releaseCurrent()
+                true
+            }
+            nextPlayer.prepareAsync()
+        }.onFailure {
+            if (player === nextPlayer) releaseCurrent()
         }
     }
-    LaunchedEffect(playing, player) {
-        while (playing) {
-            positionMillis = player?.currentPosition?.toFloat() ?: 0f
-            delay(100L)
+
+    fun seek(messageId: String, positionMillis: Float) {
+        if (activeMessageId != messageId || !prepared) return
+        this.positionMillis = positionMillis.coerceIn(0f, durationMillis)
+        player?.seekTo(this.positionMillis.toInt())
+    }
+
+    fun refreshPosition() {
+        if (playing) {
+            positionMillis = runCatching { player?.currentPosition?.toFloat() ?: 0f }
+                .getOrDefault(0f)
         }
+    }
+
+    override fun close() = releaseCurrent()
+
+    private fun releaseCurrent() {
+        val current = player
+        player = null
+        runCatching { current?.release() }
+        runCatching { descriptor?.close() }
+        descriptor = null
+        runCatching { memory?.close() }
+        memory = null
+        onPlaybackCompleted = null
+        activeMessageId = null
+        prepared = false
+        playing = false
+        positionMillis = 0f
+        durationMillis = 1f
+    }
+}
+
+@Composable
+private fun MemoryVoicePlayer(
+    messageId: String,
+    bytes: ByteArray,
+    declaredDurationMillis: Long,
+    playbackController: VoicePlaybackController,
+    onPlaybackCompleted: (String) -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    val active = playbackController.activeMessageId == messageId
+    val playing = active && playbackController.playing
+    val prepared = !active || playbackController.prepared
+    val positionMillis = if (active) playbackController.positionMillis else 0f
+    val durationMillis = if (active) {
+        playbackController.durationMillis
+    } else {
+        declaredDurationMillis.coerceAtLeast(1L).toFloat()
     }
 
     Column(
@@ -362,14 +484,12 @@ private fun MemoryVoicePlayer(
         ) {
             IconButton(
                 onClick = {
-                    val current = player ?: return@IconButton
-                    if (current.isPlaying) {
-                        current.pause()
-                        playing = false
-                    } else {
-                        current.start()
-                        playing = true
-                    }
+                    playbackController.toggle(
+                        messageId = messageId,
+                        bytes = bytes,
+                        declaredDurationMillis = declaredDurationMillis,
+                        onCompleted = onPlaybackCompleted,
+                    )
                 },
                 enabled = prepared,
                 modifier = Modifier.size(42.dp).background(LoveInk, CircleShape),
@@ -383,10 +503,10 @@ private fun MemoryVoicePlayer(
             Slider(
                 value = positionMillis.coerceIn(0f, durationMillis),
                 onValueChange = { value ->
-                    positionMillis = value
-                    player?.seekTo(value.toInt())
+                    playbackController.seek(messageId, value)
                 },
                 valueRange = 0f..durationMillis,
+                enabled = active && playbackController.prepared,
                 modifier = Modifier.weight(1f),
                 colors = SliderDefaults.colors(
                     thumbColor = LoveInk,

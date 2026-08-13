@@ -571,6 +571,19 @@ internal fun SelectionCheckIcon(
 )
 
 @Composable
+internal fun SelectIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M22 11.08V12a10 10 0 1 1-5.93-9.14",
+        "m9 11 3 3L22 4",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
 internal fun CloseIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),

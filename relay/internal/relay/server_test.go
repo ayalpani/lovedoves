@@ -255,7 +255,15 @@ func TestAdminRequiresConfiguredEmailAndExposesOnlyAggregates(t *testing.T) {
 		t.Fatalf("admin status = %d, body = %s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, aggregate := range []string{"Verbundene Geräte", "Warteschlange", "1</strong><span>von 2 aktiv", "1</strong><span>Objekt · 22 B"} {
+	for _, aggregate := range []string{
+		"Geräte verbunden",
+		"Objekte warten",
+		"1 verschlüsseltes Objekt · 22 B",
+		"Betriebsprotokoll",
+		"Verlauf",
+		`href="/oauth2/sign_out"`,
+		">ADMIN@example.com</a>",
+	} {
 		if !strings.Contains(body, aggregate) {
 			t.Fatalf("admin body is missing %q", aggregate)
 		}
@@ -274,6 +282,27 @@ func TestAdminRequiresConfiguredEmailAndExposesOnlyAggregates(t *testing.T) {
 	response = serve(server, request)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/css; charset=utf-8" {
 		t.Fatalf("admin stylesheet response = %d %q", response.Code, response.Header().Get("Content-Type"))
+	}
+}
+
+func TestAdminChartUsesObservedAggregateHistory(t *testing.T) {
+	server := &Server{}
+	now := time.Date(2026, time.August, 13, 12, 0, 0, 0, time.UTC)
+	server.recordAdminSnapshot(AdminStats{MailboxCount: 1, ObjectCount: 2}, now.Add(-23*time.Hour))
+	server.recordAdminSnapshot(AdminStats{MailboxCount: 2, ObjectCount: 5}, now.Add(-12*time.Hour))
+
+	chart := server.adminChart(AdminStats{MailboxCount: 2, ObjectCount: 4}, now)
+	if chart.ObjectPeak != 5 {
+		t.Fatalf("object peak = %d, want 5", chart.ObjectPeak)
+	}
+	if chart.DeviceRange != "1–2" {
+		t.Fatalf("device range = %q, want 1–2", chart.DeviceRange)
+	}
+	if len(chart.QueueDots) != 3 || len(chart.MailboxDots) != 3 {
+		t.Fatalf("chart points = %d/%d, want 3/3", len(chart.QueueDots), len(chart.MailboxDots))
+	}
+	if chart.QueueDots[2].X != "718" || chart.QueueArea == "" {
+		t.Fatalf("current chart point/area = %q/%q", chart.QueueDots[2].X, chart.QueueArea)
 	}
 }
 
