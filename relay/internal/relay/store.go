@@ -47,6 +47,13 @@ type ObjectMetadata struct {
 	CipherSHA256 string `json:"cipher_sha256"`
 }
 
+type AdminStats struct {
+	MailboxCount    int
+	ObjectCount     int
+	ObjectBytes     int64
+	RendezvousCount int
+}
+
 type Store struct {
 	db   *sql.DB
 	root string
@@ -234,6 +241,25 @@ func (s *Store) AuthorizeMailbox(ctx context.Context, mailboxID, token string, w
 		return ErrUnauthorized
 	}
 	return err
+}
+
+func (s *Store) AdminStats(ctx context.Context) (AdminStats, error) {
+	var stats AdminStats
+	err := s.db.QueryRowContext(
+		ctx,
+		`SELECT
+			(SELECT COUNT(*) FROM mailboxes),
+			(SELECT COUNT(*) FROM objects),
+			(SELECT COALESCE(SUM(size), 0) FROM objects),
+			(SELECT COUNT(*) FROM rendezvous WHERE expires_at > ?)`,
+		s.now().UnixMilli(),
+	).Scan(
+		&stats.MailboxCount,
+		&stats.ObjectCount,
+		&stats.ObjectBytes,
+		&stats.RendezvousCount,
+	)
+	return stats, err
 }
 
 // PreparePartnerReplacement removes the other mailbox, rotates the surviving

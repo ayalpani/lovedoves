@@ -30,22 +30,28 @@ type Notifier interface {
 type Server struct {
 	store          *Store
 	bootstrapToken string
+	adminEmail     string
 	notifier       Notifier
 	logger         *slog.Logger
 	limiter        *fixedWindowLimiter
 	handler        http.Handler
 }
 
-func NewServer(store *Store, bootstrapToken string, notifier Notifier, logger *slog.Logger) *Server {
+func NewServer(store *Store, bootstrapToken string, notifier Notifier, logger *slog.Logger, adminEmail string) *Server {
 	server := &Server{
 		store:          store,
 		bootstrapToken: bootstrapToken,
+		adminEmail:     strings.TrimSpace(adminEmail),
 		notifier:       notifier,
 		logger:         logger,
 		limiter:        newFixedWindowLimiter(600, time.Minute),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.health)
+	if server.adminEmail != "" {
+		mux.HandleFunc("GET /admin/styles.css", server.adminStyles)
+		mux.HandleFunc("GET /admin/", server.admin)
+	}
 	mux.HandleFunc("POST /v1/mailboxes", server.createMailbox)
 	mux.HandleFunc("POST /v1/mailboxes/{mailbox}/partner-replacement", server.preparePartnerReplacement)
 	mux.HandleFunc("PUT /v1/rendezvous/{id}", server.putRendezvous)

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -221,6 +222,83 @@ func TestExpiredObjectsAreRemoved(t *testing.T) {
 	assertWALTruncated(t, store)
 }
 
+func TestAdminRequiresConfiguredEmailAndExposesOnlyAggregates(t *testing.T) {
+	server, _ := testServerWithAdmin(t, "admin@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	if response := serve(server, request); response.Code != http.StatusUnauthorized {
+		t.Fatalf("missing admin email status = %d", response.Code)
+	}
+	request = httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	request.Header.Set("X-Love-Doves-Admin-Email", "someone-else@example.com")
+	if response := serve(server, request); response.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong admin email status = %d", response.Code)
+	}
+
+	mailbox := createMailbox(t, server, "bootstrap-secret", http.StatusCreated)
+	payload := []byte("opaque encrypted bytes")
+	objectID := "admin-test-object-0001"
+	request = authenticatedRequest(
+		http.MethodPut,
+		"/v1/mailboxes/"+mailbox.ID+"/objects/"+objectID,
+		mailbox.WriteCapability,
+		bytes.NewReader(payload),
+	)
+	if response := serve(server, request); response.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	request.Header.Set("X-Love-Doves-Admin-Email", "ADMIN@example.com")
+	response := serve(server, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin status = %d, body = %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, aggregate := range []string{"Verbundene Geräte", "Warteschlange", "1</strong><span>von 2 aktiv", "1</strong><span>Objekt · 22 B"} {
+		if !strings.Contains(body, aggregate) {
+			t.Fatalf("admin body is missing %q", aggregate)
+		}
+	}
+	for _, secret := range []string{mailbox.ID, mailbox.ReadCapability, mailbox.WriteCapability, objectID, string(payload)} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("admin body exposes relay detail %q", secret)
+		}
+	}
+	if got := response.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'none'") {
+		t.Fatalf("admin CSP = %q", got)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/admin/styles.css", nil)
+	request.Header.Set("X-Love-Doves-Admin-Email", "admin@example.com")
+	response = serve(server, request)
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/css; charset=utf-8" {
+		t.Fatalf("admin stylesheet response = %d %q", response.Code, response.Header().Get("Content-Type"))
+	}
+}
+
+func TestAdminIsDisabledWithoutConfiguredEmail(t *testing.T) {
+	server, _ := testServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	request.Header.Set("X-Love-Doves-Admin-Email", "admin@example.com")
+	if response := serve(server, request); response.Code != http.StatusNotFound {
+		t.Fatalf("disabled admin status = %d", response.Code)
+	}
+}
+
+func TestFormatAdminBytes(t *testing.T) {
+	for byteCount, expected := range map[int64]string{
+		0:                  "0 B",
+		22:                 "22 B",
+		13 * 1024 * 1024:   "13,0 MB",
+		1536 * 1024 * 1024: "1,5 GB",
+	} {
+		if got := formatAdminBytes(byteCount); got != expected {
+			t.Errorf("formatAdminBytes(%d) = %q, want %q", byteCount, got, expected)
+		}
+	}
+}
+
 func assertWALTruncated(t *testing.T, store *Store) {
 	t.Helper()
 	info, err := os.Stat(filepath.Join(store.root, "relay.db-wal"))
@@ -240,6 +318,14 @@ func testServer(t *testing.T) (http.Handler, *Store) {
 }
 
 func testServerWithBootstrap(t *testing.T, bootstrapToken string) (http.Handler, *Store) {
+	return testServerWithBootstrapAndAdmin(t, bootstrapToken, "")
+}
+
+func testServerWithAdmin(t *testing.T, adminEmail string) (http.Handler, *Store) {
+	return testServerWithBootstrapAndAdmin(t, "bootstrap-secret", adminEmail)
+}
+
+func testServerWithBootstrapAndAdmin(t *testing.T, bootstrapToken, adminEmail string) (http.Handler, *Store) {
 	t.Helper()
 	store, err := OpenStore(t.TempDir())
 	if err != nil {
@@ -247,7 +333,7 @@ func testServerWithBootstrap(t *testing.T, bootstrapToken string) (http.Handler,
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewServer(store, bootstrapToken, nil, logger).Handler(), store
+	return NewServer(store, bootstrapToken, nil, logger, adminEmail).Handler(), store
 }
 
 func createMailbox(t *testing.T, server http.Handler, token string, expectedStatus int) MailboxCredentials {

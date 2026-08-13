@@ -42,7 +42,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	handler := relay.NewServer(store, bootstrapToken, notifier, logger).Handler()
+	handler := relay.NewServer(
+		store,
+		bootstrapToken,
+		notifier,
+		logger,
+		os.Getenv("LOVE_DOVES_ADMIN_EMAIL"),
+	).Handler()
 	server := &http.Server{
 		Addr:              envOr("LOVE_DOVES_LISTEN_ADDR", ":8787"),
 		Handler:           handler,

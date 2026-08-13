@@ -43,6 +43,14 @@ inhaltslose Datenfeld `wake=1`. Namen, Partneridentität, Nachrichtentyp und
 Vorschau werden nicht gesendet. Ohne FCM synchronisiert die App beim Öffnen und
 periodisch mit WorkManager.
 
+Die Admin-Oberfläche ist read-only und liefert nur aggregierte Betriebsdaten.
+Google OAuth und eine Allowlist aus genau freigegebenen Betreiberadressen
+schützen den Zugriff; der Relay prüft die von Nginx gesetzte Adresse nochmals.
+Öffentliche Requests können diesen internen Header nicht setzen. OAuth-Cookies
+und Tokens werden nicht an den Relay weitergereicht. Die Oberfläche zeigt keine
+Mailbox-, Objekt- oder Installations-IDs, Capabilities, Beziehungen, Schlüssel
+oder Inhalte.
+
 ## Löschung und Wiederherstellung
 
 „Verbindung und lokale Daten löschen“ widerruft zuerst die eigene Relay-
