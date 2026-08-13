@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd "$(dirname "$0")/.." && pwd)"
+android_home="${ANDROID_HOME:-/Users/ayalpani/Library/Android/sdk}"
+java_home="${LOVE_DOVES_JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+adb_bin="$android_home/platform-tools/adb"
+lovedoves_avd="LoveDoves_API_36"
+lovedoves_phone_model="SM-A546B"
+build_tools_version="${LOVE_DOVES_BUILD_TOOLS_VERSION:-36.0.0}"
+release_keystore="${LOVE_DOVES_RELEASE_KEYSTORE:-/Users/ayalpani/.config/lovedoves/release.p12}"
+release_keychain_service="${LOVE_DOVES_RELEASE_KEYCHAIN_SERVICE:-lovedoves-release-keystore}"
+release_key_alias="${LOVE_DOVES_RELEASE_KEY_ALIAS:-lovedoves}"
+release_cert_sha256="0f86430d942913b32f69ea0bcb251792dbc91d80735f58ad7efc3db39a66c8ce"
+signed_release_apk="$project_root/dist/lovedoves-0.1.0.apk"
+
+usage() {
+  echo "usage: scripts/lovedoves-dev {relay|reverse|check|install|install-debug|start|offline|clear-emulator} [device] [on|off]"
+}
+
+is_emulator() {
+  local serial="$1"
+  [ "$("$adb_bin" -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')" = "1" ]
+}
+
+is_lovedoves_target() {
+  local serial="$1"
+  if is_emulator "$serial"; then
+    [ "$("$adb_bin" -s "$serial" shell getprop ro.boot.qemu.avd_name | tr -d '\r')" = "$lovedoves_avd" ]
+  else
+    [ "$("$adb_bin" -s "$serial" shell getprop ro.product.model | tr -d '\r')" = "$lovedoves_phone_model" ]
+  fi
+}
+
+require_lovedoves_target() {
+  local serial="$1"
+  is_lovedoves_target "$serial" || {
+    echo "Refusing non-Love-Doves device: $serial" >&2
+    exit 1
+  }
+}
+
+require_lovedoves_emulator() {
+  local serial="$1"
+  is_emulator "$serial" && is_lovedoves_target "$serial" || {
+    echo "Refusing emulator outside $lovedoves_avd: $serial" >&2
+    exit 1
+  }
+}
+
+build_signed_release() {
+  local unsigned_apk="$project_root/app/build/outputs/apk/release/app-release-unsigned.apk"
+  local aligned_apk="$project_root/dist/lovedoves-0.1.0-aligned.apk"
+  local zipalign_bin="$android_home/build-tools/$build_tools_version/zipalign"
+  local apksigner_bin="$android_home/build-tools/$build_tools_version/apksigner"
+  local signing_password
+  local actual_cert
+
+  [ -f "$release_keystore" ] || {
+    echo "Missing Love Doves release keystore: $release_keystore" >&2
+    exit 1
+  }
+  [ -x "$zipalign_bin" ] && [ -x "$apksigner_bin" ] || {
+    echo "Missing Android build tools $build_tools_version" >&2
+    exit 1
+  }
+
+  cd "$project_root"
+  JAVA_HOME="$java_home" ANDROID_HOME="$android_home" ./gradlew assembleRelease
+  mkdir -p "$project_root/dist"
+  "$zipalign_bin" -f 4 "$unsigned_apk" "$aligned_apk"
+  signing_password="$(security find-generic-password -s "$release_keychain_service" -w)"
+  LOVE_DOVES_SIGNING_PASSWORD="$signing_password" "$apksigner_bin" sign \
+    --ks "$release_keystore" \
+    --ks-type PKCS12 \
+    --ks-key-alias "$release_key_alias" \
+    --ks-pass env:LOVE_DOVES_SIGNING_PASSWORD \
+    --key-pass env:LOVE_DOVES_SIGNING_PASSWORD \
+    --out "$signed_release_apk" \
+    "$aligned_apk"
+  signing_password=""
+  actual_cert="$("$apksigner_bin" verify --print-certs "$signed_release_apk" | awk -F': ' '/certificate SHA-256 digest/{print $2; exit}')"
+  [ "$actual_cert" = "$release_cert_sha256" ] || {
+    echo "Refusing APK signed with an unexpected certificate" >&2
+    exit 1
+  }
+}
+
+command_name="${1:-}"
+case "$command_name" in
+  relay)
+    token="${LOVE_DOVES_BOOTSTRAP_TOKEN:-}"
+    if [ -z "$token" ]; then
+      token="$(cd "$project_root/relay" && go run ./cmd/lovedoves-relay bootstrap-token)"
+    fi
+    echo "Einmaliges Bootstrap-Token: $token"
+    echo "Lokaler Relay: http://127.0.0.1:8787"
+    mkdir -p "$project_root/relay/data-dev"
+    cd "$project_root/relay"
+    LOVE_DOVES_BOOTSTRAP_TOKEN="$token" \
+      LOVE_DOVES_DATA_DIR="$project_root/relay/data-dev" \
+      LOVE_DOVES_LISTEN_ADDR="127.0.0.1:8787" \
+      go run ./cmd/lovedoves-relay
+    ;;
+  reverse)
+    found=0
+    while read -r serial state; do
+      if [ "$state" = "device" ] && is_lovedoves_target "$serial"; then
+        "$adb_bin" -s "$serial" reverse tcp:8787 tcp:8787
+        echo "$serial -> Relay 8787"
+        found=1
+      fi
+    done < <("$adb_bin" devices | tail -n +2)
+    [ "$found" = "1" ] || { echo "Kein erreichbares ADB-Gerät." >&2; exit 1; }
+    ;;
+  check)
+    cd "$project_root"
+    JAVA_HOME="$java_home" ANDROID_HOME="$android_home" ./gradlew testDebugUnitTest
+    JAVA_HOME="$java_home" ANDROID_HOME="$android_home" ./gradlew assembleDebug
+    JAVA_HOME="$java_home" ANDROID_HOME="$android_home" ./gradlew lintDebug
+    cd "$project_root/relay"
+    go test ./...
+    go vet ./...
+    ;;
+  install)
+    serial="${2:?device serial required}"
+    require_lovedoves_target "$serial"
+    build_signed_release
+    "$adb_bin" -s "$serial" install -r "$signed_release_apk"
+    ;;
+  install-debug)
+    serial="${2:?emulator serial required}"
+    require_lovedoves_emulator "$serial"
+    cd "$project_root"
+    JAVA_HOME="$java_home" ANDROID_HOME="$android_home" ./gradlew assembleDebug
+    "$adb_bin" -s "$serial" install -r "$project_root/app/build/outputs/apk/debug/app-debug.apk"
+    ;;
+  start)
+    serial="${2:?device serial required}"
+    require_lovedoves_target "$serial"
+    "$adb_bin" -s "$serial" shell am start -n com.yalpani.lovedoves/.MainActivity
+    ;;
+  offline)
+    serial="${2:?emulator serial required}"
+    mode="${3:?on or off required}"
+    require_lovedoves_emulator "$serial"
+    if [ "$mode" = "on" ]; then
+      "$adb_bin" -s "$serial" shell cmd connectivity airplane-mode enable
+    elif [ "$mode" = "off" ]; then
+      "$adb_bin" -s "$serial" shell cmd connectivity airplane-mode disable
+    else
+      usage
+      exit 2
+    fi
+    ;;
+  clear-emulator)
+    serial="${2:?emulator serial required}"
+    require_lovedoves_emulator "$serial"
+    "$adb_bin" -s "$serial" shell pm clear com.yalpani.lovedoves
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

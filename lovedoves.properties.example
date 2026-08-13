@@ -1,0 +1,6 @@
+# Optional for local debug builds only. Never commit lovedoves.properties.
+relay.bootstrapToken=
+firebase.appId=
+firebase.apiKey=
+firebase.projectId=
+firebase.senderId=

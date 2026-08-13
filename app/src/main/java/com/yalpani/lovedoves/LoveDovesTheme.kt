@@ -5,18 +5,18 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-internal val LovePaper = Color(0xFFFFF9F7)
-internal val LoveInk = Color(0xFF2B2124)
-internal val LoveRose = Color(0xFFC85C72)
+internal val LovePaper = Color(0xFFF7F5F0)
+internal val LoveInk = Color(0xFF18201C)
 internal val LoveBlush = Color(0xFFF7DFE4)
-internal val LoveMist = Color(0xFFF1EBED)
-internal val LoveSuccess = Color(0xFF2D7154)
-internal val LoveError = Color(0xFFB3261E)
+internal val LoveOwnBubble = Color.White.copy(alpha = 0.5f)
+internal val LovePartnerBubble = Color(0xFFFFE45E).copy(alpha = 0.5f)
+internal val LoveMist = Color(0xFFE6E9EC)
+internal val LoveError = Color(0xFFE53935)
 
 private val LoveDovesColors = lightColorScheme(
-    primary = LoveRose,
+    primary = LoveInk,
     onPrimary = Color.White,
-    primaryContainer = LoveBlush,
+    primaryContainer = LoveMist,
     onPrimaryContainer = LoveInk,
     background = LovePaper,
     onBackground = LoveInk,
@@ -34,4 +34,3 @@ internal fun LoveDovesTheme(content: @Composable () -> Unit) {
         content = content,
     )
 }
-

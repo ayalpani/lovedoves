@@ -1,0 +1,538 @@
+package com.yalpani.lovedoves.ui
+
+import android.content.Context
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.media.ToneGenerator
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import android.os.SystemClock
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.yalpani.lovedoves.LoveInk
+import com.yalpani.lovedoves.domain.LoveDovesRepository
+import com.yalpani.lovedoves.domain.PreparedVoice
+import java.io.Closeable
+import kotlin.math.abs
+import kotlinx.coroutines.delay
+
+internal enum class VoiceGestureDecision { NONE, CANCEL, LOCK }
+
+internal fun voiceGestureDecision(
+    deltaX: Float,
+    deltaY: Float,
+    cancelThreshold: Float,
+    lockThreshold: Float,
+): VoiceGestureDecision = when {
+    deltaX <= -cancelThreshold && abs(deltaX) >= abs(deltaY) -> VoiceGestureDecision.CANCEL
+    deltaY <= -lockThreshold && abs(deltaY) > abs(deltaX) -> VoiceGestureDecision.LOCK
+    else -> VoiceGestureDecision.NONE
+}
+
+internal fun voiceCancelProgress(
+    deltaX: Float,
+    deltaY: Float,
+    cancelThreshold: Float,
+): Float = if (deltaX < 0f && abs(deltaX) >= abs(deltaY)) {
+    (-deltaX / cancelThreshold.coerceAtLeast(1f)).coerceIn(0f, 1f)
+} else {
+    0f
+}
+
+internal fun isQuickCapture(durationMillis: Long, thresholdMillis: Long): Boolean =
+    durationMillis < thresholdMillis
+
+internal fun Modifier.voiceRecordGesture(
+    enabled: Boolean,
+    contentDescription: String,
+    holdDelayMillis: Long,
+    cancelThresholdPx: Float,
+    lockThresholdPx: Float,
+    onTap: () -> Unit,
+    onStart: () -> Unit,
+    onCancelProgress: (Float) -> Unit,
+    onCancel: () -> Unit,
+    onLock: () -> Unit,
+    onRelease: () -> Unit,
+): Modifier = this
+    .semantics { this.contentDescription = contentDescription }
+    .pointerInput(enabled, holdDelayMillis, cancelThresholdPx, lockThresholdPx) {
+        if (!enabled) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var change = down
+            var pointerLost = false
+            withTimeoutOrNull(holdDelayMillis) {
+                while (change.pressed && isQuickCapture(
+                        change.uptimeMillis - down.uptimeMillis,
+                        holdDelayMillis,
+                    )
+                ) {
+                    val event = awaitPointerEvent()
+                    change = event.changes.firstOrNull { it.id == down.id } ?: run {
+                        pointerLost = true
+                        return@withTimeoutOrNull
+                    }
+                    change.consume()
+                }
+            }
+            if (pointerLost) return@awaitEachGesture
+            if (!change.pressed && isQuickCapture(
+                    change.uptimeMillis - down.uptimeMillis,
+                    holdDelayMillis,
+                )
+            ) {
+                onTap()
+                return@awaitEachGesture
+            }
+            onStart()
+            var completed = false
+            while (!completed) {
+                val deltaX = change.position.x - down.position.x
+                val deltaY = change.position.y - down.position.y
+                onCancelProgress(
+                    voiceCancelProgress(
+                        deltaX = deltaX,
+                        deltaY = deltaY,
+                        cancelThreshold = cancelThresholdPx,
+                    ),
+                )
+                when (
+                    voiceGestureDecision(
+                        deltaX = deltaX,
+                        deltaY = deltaY,
+                        cancelThreshold = cancelThresholdPx,
+                        lockThreshold = lockThresholdPx,
+                    )
+                ) {
+                    VoiceGestureDecision.CANCEL -> {
+                        onCancel()
+                        completed = true
+                    }
+                    VoiceGestureDecision.LOCK -> {
+                        onLock()
+                        completed = true
+                    }
+                    VoiceGestureDecision.NONE -> if (!change.pressed) {
+                        onRelease()
+                        completed = true
+                    }
+                }
+                change.consume()
+                if (!completed) {
+                    val event = awaitPointerEvent()
+                    change = event.changes.firstOrNull { it.id == down.id } ?: break
+                }
+            }
+        }
+    }
+
+/** Short native cues without introducing durable audio assets. */
+internal class RecordingCuePlayer : Closeable {
+    private val tones = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 35) }.getOrNull()
+
+    fun playStart() {
+        tones?.startTone(ToneGenerator.TONE_PROP_ACK, CUE_DURATION_MILLIS)
+    }
+
+    fun playStop() {
+        tones?.startTone(ToneGenerator.TONE_PROP_BEEP, CUE_DURATION_MILLIS)
+    }
+
+    override fun close() {
+        tones?.release()
+    }
+
+    private companion object {
+        const val CUE_DURATION_MILLIS = 70
+    }
+}
+
+/** MediaRecorder session whose encoded AAC data never receives a filesystem path. */
+internal class MemoryVoiceRecorder(
+    private val context: Context,
+) : Closeable {
+    private var recorder: MediaRecorder? = null
+    private var memory: MemoryMediaFile? = null
+    private var outputDescriptor: ParcelFileDescriptor? = null
+    private var accumulatedMillis = 0L
+    private var activeSinceMillis = 0L
+    private var paused = false
+
+    val isRecording: Boolean get() = recorder != null
+    val isPaused: Boolean get() = paused
+
+    fun start() {
+        check(recorder == null)
+        val nextMemory = MemoryMediaFile.create()
+        val nextDescriptor = nextMemory.duplicate()
+        val nextRecorder = createMediaRecorder(context)
+        try {
+            nextRecorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1)
+                setAudioEncodingBitRate(AUDIO_BIT_RATE)
+                setAudioSamplingRate(AUDIO_SAMPLE_RATE)
+                setOutputFile(nextDescriptor.fileDescriptor)
+                setMaxFileSize(LoveDovesRepository.MAX_VOICE_BYTES.toLong())
+                prepare()
+                start()
+            }
+            memory = nextMemory
+            outputDescriptor = nextDescriptor
+            recorder = nextRecorder
+            accumulatedMillis = 0L
+            activeSinceMillis = SystemClock.elapsedRealtime()
+            paused = false
+        } catch (failure: Throwable) {
+            runCatching { nextRecorder.release() }
+            runCatching { nextDescriptor.close() }
+            runCatching { nextMemory.close() }
+            throw failure
+        }
+    }
+
+    fun pause() {
+        val current = requireNotNull(recorder)
+        if (paused) return
+        accumulatedMillis = elapsedMillis()
+        current.pause()
+        paused = true
+    }
+
+    fun resume() {
+        val current = requireNotNull(recorder)
+        if (!paused) return
+        current.resume()
+        activeSinceMillis = SystemClock.elapsedRealtime()
+        paused = false
+    }
+
+    fun elapsedMillis(): Long = if (recorder == null || paused) {
+        accumulatedMillis
+    } else {
+        accumulatedMillis + (SystemClock.elapsedRealtime() - activeSinceMillis)
+    }
+
+    fun finish(): PreparedVoice {
+        val current = requireNotNull(recorder)
+        val currentMemory = requireNotNull(memory)
+        val duration = elapsedMillis().coerceAtLeast(1L)
+        try {
+            current.stop()
+        } catch (failure: RuntimeException) {
+            cancel()
+            throw IllegalStateException("Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.", failure)
+        }
+        releaseRecorder()
+        return try {
+            PreparedVoice(
+                m4a = currentMemory.readBytes(LoveDovesRepository.MAX_VOICE_BYTES),
+                durationMillis = duration,
+            )
+        } finally {
+            runCatching { currentMemory.close() }
+            memory = null
+        }
+    }
+
+    fun cancel() {
+        runCatching { recorder?.stop() }
+        releaseRecorder()
+        runCatching { memory?.close() }
+        memory = null
+    }
+
+    override fun close() = cancel()
+
+    private fun releaseRecorder() {
+        runCatching { recorder?.release() }
+        recorder = null
+        runCatching { outputDescriptor?.close() }
+        outputDescriptor = null
+        accumulatedMillis = 0L
+        activeSinceMillis = 0L
+        paused = false
+    }
+
+    private companion object {
+        const val AUDIO_BIT_RATE = 128_000
+        const val AUDIO_SAMPLE_RATE = 44_100
+
+        @Suppress("DEPRECATION")
+        fun createMediaRecorder(context: Context): MediaRecorder =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                MediaRecorder()
+            }
+    }
+}
+
+@Composable
+internal fun VoiceMessageContent(
+    messageId: String,
+    mediaId: String,
+    declaredDurationMillis: Long,
+    mediaBytes: suspend (String) -> ByteArray,
+    playbackController: VoicePlaybackController,
+    onPlaybackCompleted: (String) -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    val bytes by produceState<ByteArray?>(null, mediaId, mediaBytes) {
+        value = runCatching { mediaBytes(mediaId) }.getOrNull()
+    }
+    val loadedBytes = bytes
+    DisposableEffect(loadedBytes) {
+        onDispose { loadedBytes?.fill(0) }
+    }
+    if (loadedBytes == null) {
+        MessageLoadingPlaceholder(Modifier.voiceMessageFrame())
+        return
+    }
+    MemoryVoicePlayer(
+        messageId = messageId,
+        bytes = loadedBytes,
+        declaredDurationMillis = declaredDurationMillis,
+        playbackController = playbackController,
+        onPlaybackCompleted = onPlaybackCompleted,
+        footer = footer,
+    )
+}
+
+internal class VoicePlaybackController : Closeable {
+    var activeMessageId by mutableStateOf<String?>(null)
+        private set
+    var prepared by mutableStateOf(false)
+        private set
+    var playing by mutableStateOf(false)
+        private set
+    var positionMillis by mutableFloatStateOf(0f)
+        private set
+    var durationMillis by mutableFloatStateOf(1f)
+        private set
+
+    private var player: MediaPlayer? = null
+    private var memory: MemoryMediaFile? = null
+    private var descriptor: ParcelFileDescriptor? = null
+    private var onPlaybackCompleted: ((String) -> Unit)? = null
+
+    fun toggle(
+        messageId: String,
+        bytes: ByteArray,
+        declaredDurationMillis: Long,
+        onCompleted: (String) -> Unit,
+    ) {
+        val current = player
+        if (activeMessageId != messageId || current == null) {
+            play(messageId, bytes, declaredDurationMillis, onCompleted)
+            return
+        }
+        if (!prepared) return
+        if (current.isPlaying) {
+            current.pause()
+            playing = false
+        } else {
+            current.start()
+            playing = true
+        }
+    }
+
+    fun play(
+        messageId: String,
+        bytes: ByteArray,
+        declaredDurationMillis: Long,
+        onCompleted: (String) -> Unit,
+    ) {
+        releaseCurrent()
+        val nextMemory = runCatching { MemoryMediaFile.fromBytes(bytes) }.getOrNull() ?: return
+        val nextDescriptor = runCatching { nextMemory.duplicate() }.getOrElse {
+            nextMemory.close()
+            return
+        }
+        val nextPlayer = MediaPlayer()
+        activeMessageId = messageId
+        prepared = false
+        playing = false
+        positionMillis = 0f
+        durationMillis = declaredDurationMillis.coerceAtLeast(1L).toFloat()
+        memory = nextMemory
+        descriptor = nextDescriptor
+        player = nextPlayer
+        onPlaybackCompleted = onCompleted
+        runCatching {
+            nextPlayer.setDataSource(nextDescriptor.fileDescriptor, 0L, bytes.size.toLong())
+            nextPlayer.setOnPreparedListener { preparedPlayer ->
+                if (player === preparedPlayer) {
+                    durationMillis = preparedPlayer.duration.coerceAtLeast(1).toFloat()
+                    prepared = true
+                    preparedPlayer.start()
+                    playing = true
+                }
+            }
+            nextPlayer.setOnCompletionListener { completedPlayer ->
+                if (player === completedPlayer) {
+                    playing = false
+                    positionMillis = 0f
+                    completedPlayer.seekTo(0)
+                    onPlaybackCompleted?.invoke(messageId)
+                }
+            }
+            nextPlayer.setOnErrorListener { failedPlayer, _, _ ->
+                if (player === failedPlayer) releaseCurrent()
+                true
+            }
+            nextPlayer.prepareAsync()
+        }.onFailure {
+            if (player === nextPlayer) releaseCurrent()
+        }
+    }
+
+    fun seek(messageId: String, positionMillis: Float) {
+        if (activeMessageId != messageId || !prepared) return
+        this.positionMillis = positionMillis.coerceIn(0f, durationMillis)
+        player?.seekTo(this.positionMillis.toInt())
+    }
+
+    fun refreshPosition() {
+        if (playing) {
+            positionMillis = runCatching { player?.currentPosition?.toFloat() ?: 0f }
+                .getOrDefault(0f)
+        }
+    }
+
+    override fun close() = releaseCurrent()
+
+    private fun releaseCurrent() {
+        val current = player
+        player = null
+        runCatching { current?.release() }
+        runCatching { descriptor?.close() }
+        descriptor = null
+        runCatching { memory?.close() }
+        memory = null
+        onPlaybackCompleted = null
+        activeMessageId = null
+        prepared = false
+        playing = false
+        positionMillis = 0f
+        durationMillis = 1f
+    }
+}
+
+@Composable
+private fun MemoryVoicePlayer(
+    messageId: String,
+    bytes: ByteArray,
+    declaredDurationMillis: Long,
+    playbackController: VoicePlaybackController,
+    onPlaybackCompleted: (String) -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    val active = playbackController.activeMessageId == messageId
+    val playing = active && playbackController.playing
+    val prepared = !active || playbackController.prepared
+    val positionMillis = if (active) playbackController.positionMillis else 0f
+    val durationMillis = if (active) {
+        playbackController.durationMillis
+    } else {
+        declaredDurationMillis.coerceAtLeast(1L).toFloat()
+    }
+
+    Column(
+        modifier = Modifier
+            .voiceMessageFrame()
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            IconButton(
+                onClick = {
+                    playbackController.toggle(
+                        messageId = messageId,
+                        bytes = bytes,
+                        declaredDurationMillis = declaredDurationMillis,
+                        onCompleted = onPlaybackCompleted,
+                    )
+                },
+                enabled = prepared,
+                modifier = Modifier.size(42.dp).background(LoveInk, CircleShape),
+            ) {
+                if (playing) {
+                    PauseIcon("Wiedergabe pausieren", Modifier.size(20.dp), Color.White)
+                } else {
+                    PlayIcon("Sprachnachricht abspielen", Modifier.size(20.dp), Color.White)
+                }
+            }
+            Slider(
+                value = positionMillis.coerceIn(0f, durationMillis),
+                onValueChange = { value ->
+                    playbackController.seek(messageId, value)
+                },
+                valueRange = 0f..durationMillis,
+                enabled = active && playbackController.prepared,
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = LoveInk,
+                    activeTrackColor = LoveInk,
+                    inactiveTrackColor = LoveInk.copy(alpha = 0.2f),
+                ),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 50.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                formatMediaDuration(
+                    if (positionMillis > 0f) positionMillis.toLong() else durationMillis.toLong(),
+                ),
+                color = LoveInk.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            footer()
+        }
+    }
+}
+
+private fun Modifier.voiceMessageFrame(): Modifier =
+    widthIn(min = 220.dp, max = 286.dp)
+        .fillMaxWidth()
+        .height(82.dp)

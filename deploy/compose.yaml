@@ -1,0 +1,79 @@
+services:
+  relay:
+    build:
+      context: ../relay
+    image: lovedoves-relay:local
+    container_name: lovedoves-relay
+    restart: unless-stopped
+    env_file:
+      - /opt/lovedoves/config/relay.env
+    volumes:
+      - /opt/lovedoves/data:/data
+      - /opt/lovedoves/config/firebase-service-account.json:/run/secrets/firebase-service-account.json:ro
+    networks:
+      - graphula
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+
+  admin-auth:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+    container_name: lovedoves-admin-auth
+    restart: unless-stopped
+    env_file:
+      - /opt/lovedoves/config/admin.env
+    command:
+      - --http-address=0.0.0.0:4180
+      - --provider=google
+      - --upstream=static://202
+      - --reverse-proxy=true
+      - --trusted-proxy-ip=10.0.0.0/8
+      - --trusted-proxy-ip=172.16.0.0/12
+      - --trusted-proxy-ip=192.168.0.0/16
+      - --email-domain=*
+      - --authenticated-emails-file=/run/secrets/admin-emails
+      - --redirect-url=https://lovedoves.yalpani.com/oauth2/callback
+      - --whitelist-domain=lovedoves.yalpani.com
+      - --set-xauthrequest=true
+      - --skip-provider-button=true
+      - --cookie-name=__Host-love_doves_admin
+      - --cookie-path=/
+      - --cookie-secure=true
+      - --cookie-httponly=true
+      - --cookie-samesite=lax
+      - --cookie-expire=12h
+      - --session-cookie-minimal=true
+      - --pass-access-token=false
+      - --pass-authorization-header=false
+      - --pass-basic-auth=false
+      - --pass-user-headers=false
+      - --auth-logging=false
+      - --request-logging=false
+      - --standard-logging=false
+      - --silence-ping-logging=true
+      - --banner=-
+      - --footer=-
+    volumes:
+      - /opt/lovedoves/config/admin-emails:/run/secrets/admin-emails:ro
+    networks:
+      - graphula
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+
+networks:
+  graphula:
+    external: true
+    name: graphula_graphula-network

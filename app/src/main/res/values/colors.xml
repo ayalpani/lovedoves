@@ -1,6 +1,7 @@
 <resources>
     <color name="love_paper">#FFF9F7</color>
+    <color name="love_blush">#F7DFE4</color>
     <color name="love_ink">#2B2124</color>
+    <color name="launcher_heart">#000000</color>
     <color name="love_rose">#C85C72</color>
 </resources>
-
