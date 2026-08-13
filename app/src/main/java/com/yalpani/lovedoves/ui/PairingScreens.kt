@@ -23,8 +23,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +73,7 @@ internal fun ProfileSetupScreen(busy: Boolean, onSave: (String) -> Unit) {
             label = { Text("Dein Name") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+            colors = loveOutlinedTextFieldColors(),
         )
         LovePrimaryButton(
             "Weiter",
@@ -79,6 +82,12 @@ internal fun ProfileSetupScreen(busy: Boolean, onSave: (String) -> Unit) {
         )
     }
 }
+
+@Composable
+private fun loveOutlinedTextFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = LoveInk.copy(alpha = 0.5f),
+    unfocusedBorderColor = LoveInk.copy(alpha = 0.3f),
+)
 
 @Composable
 private fun WelcomeScreen(onContinue: () -> Unit) {
@@ -166,6 +175,7 @@ internal fun PairingHomeScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                colors = loveOutlinedTextFieldColors(),
             )
             LovePrimaryButton(
                 "Weiter",
@@ -230,6 +240,7 @@ internal fun PairingHomeScreen(
                 label = { Text("Einladungslink") },
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
+                colors = loveOutlinedTextFieldColors(),
             )
             LovePrimaryButton(
                 "Einladung öffnen",

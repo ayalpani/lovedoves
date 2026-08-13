@@ -17,6 +17,13 @@ an. Der Hostinganbieter kann IP- und Verbindungsmetadaten sehen. Google kann bei
 aktiviertem FCM die Installations-ID, Zeitpunkt und Netzwerkmetadaten sehen,
 jedoch keinen Namen, Inhalt oder Nachrichtentyp.
 
+Empfangene Fotos werden nach dem Entschlüsseln ausschließlich im Arbeitsspeicher
+mit einem in der App gebündelten NudeNet-/LiteRT-Modell auf möglicherweise
+entblößte männliche Genitalien geprüft. Weder Foto noch Prüfergebnis werden dafür
+an Google oder einen anderen Drittanbieter übertragen oder dauerhaft
+gespeichert. Kann die lokale Prüfung nicht abgeschlossen werden, bleibt das Foto
+bis zur bewussten Freigabe verdeckt.
+
 Objekte und ihre SQLite-Metadaten werden nach Bestätigung sofort gelöscht; das
 SQLite-Write-Ahead-Log wird anschließend trunkiert. Nicht abgeholte Objekte
 werden spätestens nach 72 Stunden entfernt. Der Relay ist kein Archiv und kein

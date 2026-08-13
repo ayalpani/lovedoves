@@ -126,7 +126,9 @@ import androidx.core.content.ContextCompat
 import com.yalpani.lovedoves.LoveBlush
 import com.yalpani.lovedoves.LoveInk
 import com.yalpani.lovedoves.LoveMist
+import com.yalpani.lovedoves.LoveOwnBubble
 import com.yalpani.lovedoves.LovePaper
+import com.yalpani.lovedoves.LovePartnerBubble
 import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.data.PairStateEntity
 import com.yalpani.lovedoves.domain.LoveDovesRepository
@@ -1838,6 +1840,8 @@ private fun ReplyReference(
                     contentDescription = if (video) "Zitiertes Video" else "Zitiertes Foto",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
+                    protectExplicit = !video && !referencedMedia.outgoing,
+                    compactExplicitCover = true,
                 )
                 if (video) {
                     Surface(
@@ -2094,7 +2098,7 @@ private fun MessageSurface(
     onReplyReferenceClick: () -> Unit,
 ) {
     Surface(
-        color = if (message.outgoing) Color.White else LoveBlush,
+        color = if (message.outgoing) LoveOwnBubble else LovePartnerBubble,
         shape = RoundedCornerShape(
             topStart = 22.dp,
             topEnd = 22.dp,
@@ -2141,7 +2145,7 @@ private fun RepliedRoundVideoMessageBubble(
     onLongPress: () -> Unit,
 ) {
     Surface(
-        color = if (message.outgoing) Color.White else LoveBlush,
+        color = if (message.outgoing) LoveOwnBubble else LovePartnerBubble,
         shape = RoundedCornerShape(
             topStart = 22.dp,
             topEnd = 22.dp,
@@ -2176,6 +2180,7 @@ private fun MessagePhoto(message: ConversationEventEntity, photoBitmaps: PhotoBi
             contentDescription = if (message.outgoing) "Gesendetes Foto" else "Empfangenes Foto",
             modifier = Modifier.fillMaxWidth().height(260.dp),
             contentScale = ContentScale.Crop,
+            protectExplicit = !message.outgoing,
         )
         PinnedMediaBadge(message, Modifier.align(Alignment.TopEnd).padding(8.dp))
         MessageMediaMetadata(message, Modifier.align(Alignment.BottomEnd).padding(8.dp))
@@ -2221,7 +2226,7 @@ private fun RoundVideoMessageBubble(
     Box(Modifier.size(252.dp)) {
         Surface(
             modifier = Modifier.size(240.dp).align(Alignment.TopStart),
-            color = if (message.outgoing) Color.White else LoveBlush,
+            color = if (message.outgoing) LoveOwnBubble else LovePartnerBubble,
             shape = CircleShape,
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2539,52 +2544,50 @@ internal fun SettingsScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
         ) {
             item {
-                SettingsSectionHeader("Verbindung")
-            }
-            item {
                 SettingsInfoItem(
+                    icon = { HeartIcon(modifier = Modifier.size(24.dp)) },
                     title = pair.partnerName,
                     detail = "Verbunden",
                 )
             }
             item {
-                HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp))
+                SettingsDivider()
             }
             item {
                 SettingsInfoItem(
+                    icon = { LockIcon(modifier = Modifier.size(24.dp)) },
                     title = "Sicherheitswörter",
                     detail = pair.safetyWords,
                 )
             }
             item {
-                SettingsSectionHeader("Chat")
-            }
-            item {
-                ChatBackgroundSetting(
-                    selected = chatBackground,
-                    onSelected = onChatBackground,
-                )
-            }
-            item {
-                SettingsSectionHeader("Gerät")
+                SettingsDivider()
             }
             item {
                 SettingsNavigationItem(
+                    icon = { SmartphoneIcon(modifier = Modifier.size(24.dp)) },
                     label = "Partnergerät ersetzen",
                     enabled = !busy,
                     onClick = { recoveryStep = RecoveryStep.CONFIRM },
                 )
             }
             item {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
+                SettingsDivider()
             }
             item {
                 SettingsDeleteItem(
                     label = "Verbindung löschen",
                     enabled = !busy,
                     onClick = { confirmDelete = true },
+                )
+            }
+            item {
+                SettingsDivider()
+            }
+            item {
+                ChatBackgroundSetting(
+                    selected = chatBackground,
+                    onSelected = onChatBackground,
                 )
             }
         }
@@ -2672,32 +2675,36 @@ private fun ChatBackgroundSetting(
     selected: ChatBackgroundOption,
     onSelected: (ChatBackgroundOption) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp)) {
-        SettingsRowTitle("Hintergrund")
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            ChatBackgroundOption.entries.forEach { option ->
-                Surface(
-                    onClick = { onSelected(option) },
-                    modifier = Modifier.size(42.dp).semantics {
-                        contentDescription = "Chat-Hintergrund ${option.label}"
-                        if (option == selected) stateDescription = "Ausgewählt"
-                    },
-                    shape = CircleShape,
-                    color = option.color,
-                    border = BorderStroke(
-                        if (option == selected) 2.dp else 1.dp,
-                        if (option == selected) LoveInk else LoveInk.copy(alpha = 0.2f),
-                    ),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (option == selected) {
-                            SelectionCheckIcon(
-                                description = null,
-                                modifier = Modifier.size(20.dp),
-                            )
+    SettingsItemLayout(icon = { PaletteIcon(modifier = Modifier.size(24.dp)) }) {
+        Column {
+            SettingsRowTitle("Hintergrund")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                ChatBackgroundOption.entries.forEach { option ->
+                    Surface(
+                        onClick = { onSelected(option) },
+                        modifier = Modifier.size(42.dp).semantics {
+                            contentDescription = "Chat-Hintergrund ${option.label}"
+                            if (option == selected) stateDescription = "Ausgewählt"
+                        },
+                        shape = CircleShape,
+                        color = option.color,
+                        border = BorderStroke(
+                            1.dp,
+                            LoveInk.copy(alpha = 0.2f),
+                        ),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (option == selected) {
+                                SelectionCheckIcon(
+                                    description = null,
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color.White,
+                                    strokeWidth = 3.5f,
+                                )
+                            }
                         }
                     }
                 }
@@ -2707,34 +2714,46 @@ private fun ChatBackgroundSetting(
 }
 
 @Composable
-private fun SettingsSectionHeader(label: String) {
+private fun SettingsItemLayout(
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().background(LoveMist).padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            label,
-            color = LoveInk,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Box(Modifier.width(24.dp), contentAlignment = Alignment.TopCenter) { icon() }
+        Box(Modifier.weight(1f)) { content() }
     }
 }
 
 @Composable
 private fun SettingsInfoItem(
+    icon: @Composable () -> Unit,
     title: String,
     detail: String,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp)) {
-        SettingsRowTitle(title)
-        Text(
-            detail,
-            modifier = Modifier.padding(top = 2.dp),
-            color = LoveInk.copy(alpha = 0.62f),
-            style = MaterialTheme.typography.bodyLarge,
-        )
+    SettingsItemLayout(icon = icon) {
+        Column {
+            SettingsRowTitle(title)
+            Text(
+                detail,
+                modifier = Modifier.padding(top = 2.dp),
+                color = LoveInk.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
     }
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 64.dp, end = 24.dp),
+        color = LoveInk.copy(alpha = 0.12f),
+    )
 }
 
 @Composable
@@ -2754,6 +2773,7 @@ private fun SettingsRowTitle(
 
 @Composable
 private fun SettingsNavigationItem(
+    icon: @Composable () -> Unit,
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -2761,20 +2781,15 @@ private fun SettingsNavigationItem(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().height(64.dp),
+        modifier = Modifier.fillMaxWidth(),
         color = Color.Transparent,
         contentColor = LoveInk,
     ) {
-        Row(
-            Modifier.padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SettingsRowTitle(
-                text = label,
-                modifier = Modifier.weight(1f),
-            )
-            ChevronRightIcon(null)
+        SettingsItemLayout(icon = icon) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsRowTitle(text = label, modifier = Modifier.weight(1f))
+                ChevronRightIcon(null)
+            }
         }
     }
 }
@@ -2785,25 +2800,17 @@ private fun SettingsDeleteItem(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val color = MaterialTheme.colorScheme.error
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth().height(64.dp),
+        modifier = Modifier.fillMaxWidth(),
         color = Color.Transparent,
-        contentColor = color,
+        contentColor = LoveInk,
     ) {
-        Row(
-            Modifier.padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        SettingsItemLayout(
+            icon = { DeleteIcon(modifier = Modifier.size(24.dp), color = LoveInk) },
         ) {
-            DeleteIcon(modifier = Modifier.size(24.dp), color = color)
-            SettingsRowTitle(
-                text = label,
-                modifier = Modifier.weight(1f),
-                color = color,
-            )
+            SettingsRowTitle(text = label)
         }
     }
 }
@@ -2853,12 +2860,39 @@ internal fun EncryptedPhotoImage(
     contentScale: ContentScale,
     zoomable: Boolean = false,
     backgroundColor: Color = Color.Transparent,
+    protectExplicit: Boolean = false,
+    compactExplicitCover: Boolean = false,
 ) {
-    val bitmap by produceState<Bitmap?>(null, mediaId, photoBitmaps, zoomable) {
-        value = if (zoomable) {
-            photoBitmaps.fullSize(mediaId)
+    var revealed by remember(mediaId, photoBitmaps) {
+        mutableStateOf(photoBitmaps.isRevealed(mediaId))
+    }
+    val screeningRequired = protectExplicit && !revealed
+    val safety by produceState<ReceivedPhotoSafety?>(
+        initialValue = if (screeningRequired) null else ReceivedPhotoSafety.SAFE,
+        mediaId,
+        photoBitmaps,
+        screeningRequired,
+    ) {
+        value = if (screeningRequired) {
+            photoBitmaps.safety(mediaId)
         } else {
-            photoBitmaps.thumbnail(mediaId)
+            ReceivedPhotoSafety.SAFE
+        }
+    }
+    val bitmap by produceState<Bitmap?>(
+        null,
+        mediaId,
+        photoBitmaps,
+        zoomable,
+        safety,
+        revealed,
+    ) {
+        if (safety == ReceivedPhotoSafety.SAFE || revealed) {
+            value = if (zoomable) {
+                photoBitmaps.fullSize(mediaId)
+            } else {
+                photoBitmaps.thumbnail(mediaId)
+            }
         }
     }
     val rendered = bitmap
@@ -2866,21 +2900,77 @@ internal fun EncryptedPhotoImage(
         onDispose { if (zoomable) rendered?.recycle() }
     }
     Box(modifier.background(backgroundColor), contentAlignment = Alignment.Center) {
-        if (rendered == null) {
-            MessageLoadingPlaceholder(Modifier.fillMaxSize())
-        } else if (zoomable) {
-            ZoomablePhoto(
+        when {
+            safety == ReceivedPhotoSafety.EXPLICIT || safety == ReceivedPhotoSafety.UNAVAILABLE -> {
+                ExplicitPhotoCover(
+                    screeningUnavailable = safety == ReceivedPhotoSafety.UNAVAILABLE,
+                    compact = compactExplicitCover,
+                    onReveal = {
+                        photoBitmaps.reveal(mediaId)
+                        revealed = true
+                    },
+                )
+            }
+            rendered == null -> MessageLoadingPlaceholder(Modifier.fillMaxSize())
+            zoomable -> ZoomablePhoto(
                 bitmap = rendered,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
             )
-        } else {
-            Image(
+            else -> Image(
                 rendered.asImageBitmap(),
                 contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ExplicitPhotoCover(
+    screeningUnavailable: Boolean,
+    compact: Boolean = false,
+    onReveal: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LoveBlush)
+            .semantics {
+                contentDescription = if (screeningUnavailable) {
+                    "Foto vorsichtshalber verdeckt"
+                } else {
+                    "Möglicherweise intimes Foto"
+                }
+            }
+            .clickable(
+                onClickLabel = "Foto bewusst anzeigen",
+                onClick = onReveal,
+            )
+            .padding(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+    ) {
+        ImageIcon(modifier = Modifier.size(28.dp))
+        if (!compact) {
+            Text(
+                text = if (screeningUnavailable) {
+                    "Foto vorsichtshalber verdeckt"
+                } else {
+                    "Möglicherweise intimes Foto"
+                },
+                color = LoveInk,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "Tippen, um es anzuzeigen",
+                color = LoveInk.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
             )
         }
     }

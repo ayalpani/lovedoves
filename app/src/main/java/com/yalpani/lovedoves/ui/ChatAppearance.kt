@@ -7,12 +7,12 @@ internal enum class ChatBackgroundOption(
     val label: String,
     val color: Color,
 ) {
-    PAPER("Papier", Color(0xFFD2CCC1)),
-    BLUSH("Rosa", Color(0xFFDCA8B4)),
-    PEACH("Pfirsich", Color(0xFFE2B895)),
-    SAGE("Salbei", Color(0xFFAFC8AB)),
-    SKY("Himmel", Color(0xFFACC8DD)),
-    LAVENDER("Lavendel", Color(0xFFC3B3DA));
+    PAPER("Papier", Color(0xFFB9AFA2)),
+    BLUSH("Rosa", Color(0xFFCF7F93)),
+    PEACH("Pfirsich", Color(0xFFD89662)),
+    SAGE("Salbei", Color(0xFF83AA7F)),
+    SKY("Himmel", Color(0xFF79A6C6)),
+    LAVENDER("Lavendel", Color(0xFF9780BB));
 
     fun persist(context: Context) {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

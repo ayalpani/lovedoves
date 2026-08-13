@@ -439,6 +439,35 @@ internal fun SettingsIcon(
 )
 
 @Composable
+internal fun PaletteIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M12 22a10 10 0 1 1 10-10c0 2.76-2.24 5-5 5h-1.8c-.9 0-1.6.8-1.6 1.7 0 .4.2.7.4 1 .4.5.4 1.2 0 1.7-.4.5-.9.8-1.5.8",
+        "M15 8h.01",
+        "M12 5h.01",
+        "M9 8h.01",
+        "M7 12h.01",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
+internal fun SmartphoneIcon(
+    description: String? = null,
+    modifier: Modifier = Modifier.size(24.dp),
+) = LoveIcon(
+    listOf(
+        "M5 2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2",
+        "M12 18h.01",
+    ),
+    description,
+    modifier,
+)
+
+@Composable
 internal fun QrIcon(description: String? = null) = LoveIcon(
     listOf(
         "M4 3H7A1 1 0 0 1 8 4V7A1 1 0 0 1 7 8H4A1 1 0 0 1 3 7V4A1 1 0 0 1 4 3Z",
@@ -563,11 +592,14 @@ internal fun EditIcon(
 internal fun SelectionCheckIcon(
     description: String? = null,
     modifier: Modifier = Modifier.size(24.dp),
+    color: Color = LocalContentColor.current,
+    strokeWidth: Float = 2.5f,
 ) = LoveIcon(
     listOf("m5 12 4 4L19 6"),
     description,
     modifier,
-    strokeWidth = 2.5f,
+    color,
+    strokeWidth,
 )
 
 @Composable

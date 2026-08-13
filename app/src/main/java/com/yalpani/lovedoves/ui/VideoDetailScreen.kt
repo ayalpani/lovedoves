@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -90,6 +91,7 @@ internal fun MediaDetailScreen(
                     contentScale = ContentScale.Fit,
                     zoomable = true,
                     backgroundColor = Color.Black,
+                    protectExplicit = !message.outgoing,
                 )
             } else {
                 VideoGalleryPage(
@@ -103,19 +105,24 @@ internal fun MediaDetailScreen(
             }
         }
         if (mediaMessages.size > 1) {
-            MaterialSurface(
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 18.dp),
-                color = Color.Black.copy(alpha = 0.48f),
-                shape = RoundedCornerShape(14.dp),
+                    .padding(top = 18.dp)
+                    .height(52.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "${pagerState.currentPage + 1} / ${mediaMessages.size}",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    color = Color.White,
-                )
+                MaterialSurface(
+                    color = Color.Black.copy(alpha = 0.48f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${mediaMessages.size}",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = Color.White,
+                    )
+                }
             }
         }
         CameraCloseButton("Medienansicht schließen", onBack)

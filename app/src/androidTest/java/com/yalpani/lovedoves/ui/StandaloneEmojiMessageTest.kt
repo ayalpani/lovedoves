@@ -1,9 +1,12 @@
 package com.yalpani.lovedoves.ui
 
+import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import com.yalpani.lovedoves.LoveDovesTheme
+import com.yalpani.lovedoves.R
 import com.yalpani.lovedoves.data.ConversationEventEntity
 import com.yalpani.lovedoves.domain.LoveDovesRepository
 import org.junit.Assert.assertFalse
@@ -27,6 +30,26 @@ class StandaloneEmojiMessageTest {
         assertFalse(isSingleEmoji("A"))
         assertFalse(isSingleEmoji("😀😀"))
         assertFalse(isSingleEmoji(" 😀"))
+    }
+
+    @Test
+    fun loveCategoryIncludesRequestedEmojiFamilies() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val emoji = context.resources.openRawResource(R.raw.emoji_category_love)
+            .bufferedReader()
+            .useLines { lines -> lines.map { it.substringBefore(',') }.toSet() }
+
+        setOf(
+            "👄", "🫦", "👅", "🧠", "🫀", "🩸", "🫂", "🫶", "🤝", "👥",
+            "❤️", "🧡", "💛", "💚", "🩵", "💙", "💜", "🤎", "🖤", "🩶", "🤍", "🩷",
+            "🧑‍🤝‍🧑", "👭", "👬", "👫", "💏", "💑",
+            "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨", "👩‍❤️‍💋‍👩",
+            "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩", "🕊️", "🔥", "🌈",
+            "🌞", "⭐", "🌟", "✨", "🍉", "🍈",
+            "💐", "🌹", "🥀", "🌺", "🌷", "🪷", "🌸", "💮", "🏵️", "🪻", "🌻", "🌼",
+        ).forEach { expected ->
+            assertTrue("Missing $expected from the love category", expected in emoji)
+        }
     }
 
     @Test

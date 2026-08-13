@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 internal val LovePaper = Color(0xFFF7F5F0)
 internal val LoveInk = Color(0xFF18201C)
 internal val LoveBlush = Color(0xFFF7DFE4)
+internal val LoveOwnBubble = Color.White.copy(alpha = 0.5f)
+internal val LovePartnerBubble = Color(0xFFFFE45E).copy(alpha = 0.5f)
 internal val LoveMist = Color(0xFFE6E9EC)
 internal val LoveError = Color(0xFFE53935)
 

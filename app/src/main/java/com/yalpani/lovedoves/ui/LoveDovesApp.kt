@@ -81,7 +81,7 @@ internal fun LoveDovesApp(
         LoveDovesController(context.applicationContext as Application, session)
     }
     DisposableEffect(controller) { onDispose(controller::close) }
-    val photoBitmaps = remember(controller) { PhotoBitmapLoader(controller) }
+    val photoBitmaps = remember(controller) { PhotoBitmapLoader(context, controller) }
     DisposableEffect(photoBitmaps) { onDispose(photoBitmaps::close) }
     val content by controller.content.collectAsStateWithLifecycle()
     val controllerBusy by controller.busy.collectAsStateWithLifecycle()

@@ -69,6 +69,10 @@ android {
         resources.excludes += setOf("**/*.dylib", "**/*.dll")
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -115,6 +119,7 @@ dependencies {
     implementation("com.google.protobuf:protobuf-javalite:4.35.1")
     implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.guava:guava:33.4.8-android")
+    implementation("com.google.ai.edge.litert:litert:1.4.2")
     implementation("me.saket.telephoto:zoomable-image:0.19.0")
     implementation("net.zetetic:sqlcipher-android:4.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
